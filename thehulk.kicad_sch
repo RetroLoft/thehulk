@@ -8907,6 +8907,16 @@
 	)
 	(wire
 		(pts
+			(xy 259.08 66.04) (xy 259.08 68.58)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "cafbdd13-12ba-4844-8651-1b7f59e8899f")
+	)
+	(wire
+		(pts
 			(xy 64.77 67.31) (xy 74.93 67.31)
 		)
 		(stroke
@@ -9254,6 +9264,16 @@
 			(type default)
 		)
 		(uuid "f0c9156a-cbeb-49b6-a39b-f5ba078edd06")
+	)
+	(wire
+		(pts
+			(xy 259.08 76.2) (xy 259.08 78.74)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "f1a60cd8-498d-4b78-a100-70b9b31ae6be")
 	)
 	(wire
 		(pts
@@ -10361,7 +10381,7 @@
 	)
 	(global_label "A14_3V3"
 		(shape input)
-		(at 237.49 62.23 180)
+		(at 237.49 82.55 180)
 		(fields_autoplaced yes)
 		(effects
 			(font
@@ -10371,7 +10391,7 @@
 		)
 		(uuid "388415f8-d3c2-4374-b6e6-0c164d4469f4")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 226.522 62.23 0)
+			(at 226.522 82.55 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -10493,7 +10513,7 @@
 	)
 	(global_label "D4_3V3"
 		(shape input)
-		(at 237.49 87.63 180)
+		(at 237.49 77.47 180)
 		(fields_autoplaced yes)
 		(effects
 			(font
@@ -10503,7 +10523,7 @@
 		)
 		(uuid "4086fa8b-1b03-4bce-bb87-b93dd408bc12")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 227.5501 87.63 0)
+			(at 227.5501 77.47 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -10559,7 +10579,7 @@
 	)
 	(global_label "{slash}IRQ"
 		(shape input)
-		(at 237.49 69.85 180)
+		(at 237.49 87.63 180)
 		(fields_autoplaced yes)
 		(effects
 			(font
@@ -10569,7 +10589,29 @@
 		)
 		(uuid "4606cb1a-e3f3-4914-bc38-d7815413da08")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 229.969 69.85 0)
+			(at 229.969 87.63 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify right)
+				(hide yes)
+			)
+		)
+	)
+	(global_label "{slash}IRQ"
+		(shape input)
+		(at 259.08 78.74 270)
+		(fields_autoplaced yes)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify right)
+		)
+		(uuid "4a910bee-9edc-4613-bc6d-939423dfbd8a")
+		(property "Intersheetrefs" "${INTERSHEET_REFS}"
+			(at 259.08 86.261 90)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -11505,7 +11547,7 @@
 	)
 	(global_label "D3_3V3"
 		(shape input)
-		(at 237.49 85.09 180)
+		(at 237.49 67.31 180)
 		(fields_autoplaced yes)
 		(effects
 			(font
@@ -11515,7 +11557,7 @@
 		)
 		(uuid "86bf870d-1d5e-4779-80e1-cc8843f10905")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 227.5501 85.09 0)
+			(at 227.5501 67.31 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -11769,7 +11811,7 @@
 	)
 	(global_label "A15_3V3"
 		(shape input)
-		(at 237.49 72.39 180)
+		(at 237.49 85.09 180)
 		(fields_autoplaced yes)
 		(effects
 			(font
@@ -11779,7 +11821,7 @@
 		)
 		(uuid "9a4db43f-9681-4bc3-820f-9ec86999b05f")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 226.522 72.39 0)
+			(at 226.522 85.09 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -11835,7 +11877,7 @@
 	)
 	(global_label "D2_3V3"
 		(shape input)
-		(at 237.49 82.55 180)
+		(at 237.49 72.39 180)
 		(fields_autoplaced yes)
 		(effects
 			(font
@@ -11845,7 +11887,7 @@
 		)
 		(uuid "9e45be8b-2b86-4309-8ce6-87292ca01a73")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 227.5501 82.55 0)
+			(at 227.5501 72.39 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -12011,7 +12053,7 @@
 	)
 	(global_label "D1_3V3"
 		(shape input)
-		(at 237.49 77.47 180)
+		(at 237.49 69.85 180)
 		(fields_autoplaced yes)
 		(effects
 			(font
@@ -12021,7 +12063,7 @@
 		)
 		(uuid "a7a9b670-0b5c-4ec7-b8cd-73b62a17ad99")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 227.5501 77.47 0)
+			(at 227.5501 69.85 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -12055,7 +12097,7 @@
 	)
 	(global_label "D0_3V3"
 		(shape input)
-		(at 237.49 67.31 180)
+		(at 237.49 64.77 180)
 		(fields_autoplaced yes)
 		(effects
 			(font
@@ -12065,7 +12107,7 @@
 		)
 		(uuid "a9dd8782-f15e-4f55-8540-856aa9d49350")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 227.5501 67.31 0)
+			(at 227.5501 64.77 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -12605,7 +12647,7 @@
 	)
 	(global_label "A13_3V3"
 		(shape input)
-		(at 237.49 64.77 180)
+		(at 237.49 62.23 180)
 		(fields_autoplaced yes)
 		(effects
 			(font
@@ -12615,7 +12657,7 @@
 		)
 		(uuid "c8441f23-4a0f-4b28-859d-c63827065fdb")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 226.522 64.77 0)
+			(at 226.522 62.23 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -18849,6 +18891,72 @@
 		)
 	)
 	(symbol
+		(lib_id "power:+3V3")
+		(at 259.08 66.04 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(uuid "85eca8a0-9976-4ca3-81b8-650cc664123e")
+		(property "Reference" "#PWR023"
+			(at 259.08 69.85 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Value" "+3V3_LOGIC"
+			(at 259.08 60.96 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" ""
+			(at 259.08 66.04 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" ""
+			(at 259.08 66.04 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" "Power symbol creates a global label with name \"+3V3\""
+			(at 259.08 66.04 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(pin "1"
+			(uuid "4bc6b6bb-3aea-453f-838b-eea75c2e5892")
+		)
+		(instances
+			(project "thehulk"
+				(path "/06ffb7b9-d0dd-4aa6-8ea6-93758c8a9df5"
+					(reference "#PWR023")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
 		(lib_id "Device:C")
 		(at 72.39 138.43 0)
 		(unit 1)
@@ -20783,6 +20891,76 @@
 			(project "thehulk"
 				(path "/06ffb7b9-d0dd-4aa6-8ea6-93758c8a9df5"
 					(reference "#PWR025")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "Device:R")
+		(at 259.08 72.39 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(uuid "b016c6a3-0fba-4260-9fbc-2566b2457e15")
+		(property "Reference" "R9"
+			(at 261.62 71.1199 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Value" "4K7"
+			(at 261.62 73.6599 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Footprint" "Resistor_SMD:R_0402_1005Metric"
+			(at 257.302 72.39 90)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" "~"
+			(at 259.08 72.39 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" "Resistor"
+			(at 259.08 72.39 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(pin "1"
+			(uuid "2091a9e1-f28c-4c57-a4b9-b6e879b2b226")
+		)
+		(pin "2"
+			(uuid "f37207a6-fe96-4a12-bd29-7317c9a46f4a")
+		)
+		(instances
+			(project "thehulk"
+				(path "/06ffb7b9-d0dd-4aa6-8ea6-93758c8a9df5"
+					(reference "R9")
 					(unit 1)
 				)
 			)
