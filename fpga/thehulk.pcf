@@ -1,0 +1,53 @@
+# TheHulk v2 - iCE40UP5K-SG48 pin constraints
+# Generated from hardware/v2/thehulk.kicad_sch (RetroLoft/thehulk, commit 4690d7c).
+# RGB0/RGB1 carry A14/A15 (inputs; the RGB pads cannot drive high but their input path
+# works), RGB2 carries /IRQ (open drain, pull-up R9). Full SPI bus as on v1.
+
+# Atari address bus (via U8)
+set_io -pullup yes a[0]       12   # IOB_22a
+set_io -pullup yes a[1]       13   # IOB_24a
+set_io -pullup yes a[2]       18   # IOB_31b
+set_io -pullup yes a[3]       20   # IOB_25b_G3
+set_io -pullup yes a[4]       21   # IOB_23b
+set_io -pullup yes a[5]       25   # IOT_36b
+set_io -pullup yes a[6]       27   # IOT_38b
+set_io -pullup yes a[7]       31   # IOT_42b
+set_io -pullup yes a[8]       28   # IOT_41a
+set_io -pullup yes a[9]       26   # IOT_39a
+set_io -pullup yes a[10]      19   # IOB_29b
+set_io -pullup yes a[11]      23   # IOT_37a
+set_io -pullup yes a[12]      32   # IOT_43a
+set_io a[13]      39   # RGB0 (no internal pull-up on RGB pads)
+set_io a[14]      40   # RGB1 (no internal pull-up on RGB pads)
+set_io uds_n      11   # IOB_20a
+
+# Cartridge selects (via U10)
+set_io -pullup yes rom3_n     10   # IOB_18a
+set_io -pullup yes rom4_n      9   # IOB_16a
+
+# Atari data bus (via U9)
+set_io d[0]       34   # IOT_44b
+set_io d[1]       35   # IOT_46b_G0
+set_io d[2]       36   # IOT_48b
+set_io d[3]       37   # IOT_45a_G1
+set_io d[4]       38   # IOT_50b
+set_io d[5]       42   # IOT_51a
+set_io d[6]       43   # IOT_49a
+set_io d[7]       44   # IOB_3b_G6
+set_io d[8]       45   # IOB_5b
+set_io d[9]       46   # IOB_0a
+set_io d[10]      47   # IOB_2a
+set_io d[11]      48   # IOB_4a
+set_io d[12]       2   # IOB_6a
+set_io d[13]       3   # IOB_9b
+set_io d[14]       4   # IOB_8a
+set_io d[15]       6   # IOB_13b
+
+# SPI to the ESP32-S3 (also loads the bitstream)
+set_io -pullup yes spi_cs_n   16   # IOB_35b_SPI_SS
+set_io spi_sck    15   # IOB_34a_SPI_SCK
+set_io spi_mosi   17   # IOB_33b_SPI_SI
+set_io spi_miso   14   # IOB_32a_SPI_SO
+
+# /IRQ to the ESP32 (GPIO14)
+set_io irq_n      41   # RGB2

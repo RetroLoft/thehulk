@@ -1,9 +1,18 @@
-# KiCad auto-generated / regenerable
+# Toolchains
+.venv-fpga/
+
+# Build output
+fpga/build/
+esp32/build/
+esp32/sdkconfig
+esp32/sdkconfig.old
+esp32/managed_components/
+atari/gemdrive/build/
+atari/gemdrive/dist/
+atari/config/*.PRG
+
+# KiCad (see also hardware/v2/.gitignore)
 fp-info-cache
-*.kicad_pcb-bak
-*.kicad_sch-bak
-*.bck
-*~
-*.lck
 *-backups/
 _autosave-*
+*.lck
