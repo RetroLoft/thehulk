@@ -5550,7 +5550,447 @@
 				(type solid)
 			)
 			(layer "Dwgs.User")
-			(uuid "2d2b79b6-0531-4a39-9d3f-bc0d2af23b40")
+			(uuid "c95be6ee-708e-4905-b6a1-d2a177f062e7")
+		)
+		(fp_text user "GND"
+			(at 0 13.22 180)
+			(layer "F.SilkS")
+			(uuid "02f95651-6123-4071-9180-13e324b52ca7")
+			(effects
+				(font
+					(size 0.8 0.8)
+					(thickness 0.12)
+				)
+			)
+		)
+		(fp_text user "D14"
+			(at 36 13.22 180)
+			(layer "F.SilkS")
+			(uuid "1ae9fb1e-d6a5-47ab-855b-3c0f06c3745e")
+			(effects
+				(font
+					(size 0.8 0.8)
+					(thickness 0.12)
+				)
+			)
+		)
+		(fp_text user "/LDS"
+			(at 2 13.22 180)
+			(layer "F.SilkS")
+			(uuid "2302d97c-c0ee-462c-9d4e-32dba0704c28")
+			(effects
+				(font
+					(size 0.8 0.8)
+					(thickness 0.12)
+				)
+			)
+		)
+		(fp_text user "/UDS"
+			(at 4 13.22 180)
+			(layer "F.SilkS")
+			(uuid "35590ff4-9ab8-419d-babe-58aff5ccfcf5")
+			(effects
+				(font
+					(size 0.8 0.8)
+					(thickness 0.12)
+				)
+			)
+		)
+		(fp_text user "D10"
+			(at 32 13.22 180)
+			(layer "F.SilkS")
+			(uuid "3dcc9c43-a8bb-483f-b34b-d8c5f42311ba")
+			(effects
+				(font
+					(size 0.8 0.8)
+					(thickness 0.12)
+				)
+			)
+		)
+		(fp_text user "A8"
+			(at 18 13.22 180)
+			(layer "F.SilkS")
+			(uuid "413b36cc-5924-4795-8a99-99ae87341e67")
+			(effects
+				(font
+					(size 0.8 0.8)
+					(thickness 0.12)
+				)
+			)
+		)
+		(fp_text user "A5"
+			(at 12 13.22 180)
+			(layer "F.SilkS")
+			(uuid "5696638e-89bb-425f-82bf-34dc24aebf8e")
+			(effects
+				(font
+					(size 0.8 0.8)
+					(thickness 0.12)
+				)
+			)
+		)
+		(fp_text user "D4"
+			(at 26 13.22 180)
+			(layer "F.SilkS")
+			(uuid "60247e24-b2d0-4d20-84dd-559ece1051b8")
+			(effects
+				(font
+					(size 0.8 0.8)
+					(thickness 0.12)
+				)
+			)
+		)
+		(fp_text user "D2"
+			(at 24 13.22 180)
+			(layer "F.SilkS")
+			(uuid "7125774f-c49c-4d19-9783-806bec667e5c")
+			(effects
+				(font
+					(size 0.8 0.8)
+					(thickness 0.12)
+				)
+			)
+		)
+		(fp_text user "+5V"
+			(at 38 13.22 180)
+			(layer "F.SilkS")
+			(uuid "74e4a799-4af1-4d93-a2a2-7d13fc4d6b07")
+			(effects
+				(font
+					(size 0.8 0.8)
+					(thickness 0.12)
+				)
+			)
+		)
+		(fp_text user "D6"
+			(at 28 13.22 180)
+			(layer "F.SilkS")
+			(uuid "789f9a38-b684-4b6e-88f8-106eff332abe")
+			(effects
+				(font
+					(size 0.8 0.8)
+					(thickness 0.12)
+				)
+			)
+		)
+		(fp_text user "A6"
+			(at 14 13.22 180)
+			(layer "F.SilkS")
+			(uuid "805e26b8-c0a6-4ece-9a0e-f922d951f922")
+			(effects
+				(font
+					(size 0.8 0.8)
+					(thickness 0.12)
+				)
+			)
+		)
+		(fp_text user "A13"
+			(at 20 13.22 180)
+			(layer "F.SilkS")
+			(uuid "972b9c68-4b41-4bf7-b7c4-7b4c429b74f2")
+			(effects
+				(font
+					(size 0.8 0.8)
+					(thickness 0.12)
+				)
+			)
+		)
+		(fp_text user "D12"
+			(at 34 13.22 180)
+			(layer "F.SilkS")
+			(uuid "98acddad-e95b-4072-be8c-1d0148c1edc5")
+			(effects
+				(font
+					(size 0.8 0.8)
+					(thickness 0.12)
+				)
+			)
+		)
+		(fp_text user "/ROM3"
+			(at 8 13.22 180)
+			(layer "F.SilkS")
+			(uuid "a7b2bbd7-73b4-4e32-a0a3-204a20937ff5")
+			(effects
+				(font
+					(size 0.8 0.8)
+					(thickness 0.12)
+				)
+			)
+		)
+		(fp_text user "D0"
+			(at 22 13.22 180)
+			(layer "F.SilkS")
+			(uuid "a81c3aa6-f1fd-4b5b-b35f-54658d166704")
+			(effects
+				(font
+					(size 0.8 0.8)
+					(thickness 0.12)
+				)
+			)
+		)
+		(fp_text user "/ROM4"
+			(at 6 13.22 180)
+			(layer "F.SilkS")
+			(uuid "ae41d525-9b74-4c12-8773-d3d04c802910")
+			(effects
+				(font
+					(size 0.8 0.8)
+					(thickness 0.12)
+				)
+			)
+		)
+		(fp_text user "A11"
+			(at 10 13.22 180)
+			(layer "F.SilkS")
+			(uuid "b390e014-a658-4041-aa62-4928d2e1ac11")
+			(effects
+				(font
+					(size 0.8 0.8)
+					(thickness 0.12)
+				)
+			)
+		)
+		(fp_text user "D8"
+			(at 30 13.22 180)
+			(layer "F.SilkS")
+			(uuid "da592979-dd53-495f-8b41-b29da4262bdc")
+			(effects
+				(font
+					(size 0.8 0.8)
+					(thickness 0.12)
+				)
+			)
+		)
+		(fp_text user "A7"
+			(at 16 13.22 180)
+			(layer "F.SilkS")
+			(uuid "e621d821-1dbe-4c3f-b381-8e8c96c4d671")
+			(effects
+				(font
+					(size 0.8 0.8)
+					(thickness 0.12)
+				)
+			)
+		)
+		(fp_text user "A10"
+			(at 14 13.22 180)
+			(layer "B.SilkS")
+			(uuid "04bfb8e1-77c6-4cec-acee-64ea347f32ef")
+			(effects
+				(font
+					(size 0.8 0.8)
+					(thickness 0.12)
+				)
+			)
+		)
+		(fp_text user "D1"
+			(at 22 13.22 180)
+			(layer "B.SilkS")
+			(uuid "050e3057-03c7-471c-856d-4b9048824c6d")
+			(effects
+				(font
+					(size 0.8 0.8)
+					(thickness 0.12)
+				)
+			)
+		)
+		(fp_text user "A12"
+			(at 12 13.22 180)
+			(layer "B.SilkS")
+			(uuid "064408ef-2477-4a49-a67f-2c2104ac5ba8")
+			(effects
+				(font
+					(size 0.8 0.8)
+					(thickness 0.12)
+				)
+			)
+		)
+		(fp_text user "A1"
+			(at 4 13.22 180)
+			(layer "B.SilkS")
+			(uuid "214b960e-979e-406f-84a2-fcbfb0b865f4")
+			(effects
+				(font
+					(size 0.8 0.8)
+					(thickness 0.12)
+				)
+			)
+		)
+		(fp_text user "A3"
+			(at 8 13.22 180)
+			(layer "B.SilkS")
+			(uuid "3ce93558-3905-4969-a803-6272b6eda953")
+			(effects
+				(font
+					(size 0.8 0.8)
+					(thickness 0.12)
+				)
+			)
+		)
+		(fp_text user "A2"
+			(at 6 13.22 180)
+			(layer "B.SilkS")
+			(uuid "3d78dcf3-69dd-4d8f-b174-7441633f0fca")
+			(effects
+				(font
+					(size 0.8 0.8)
+					(thickness 0.12)
+				)
+			)
+		)
+		(fp_text user "D13"
+			(at 34 13.22 180)
+			(layer "B.SilkS")
+			(uuid "3e1b6d8d-5b8b-40b7-bcb4-fde0ac4e213a")
+			(effects
+				(font
+					(size 0.8 0.8)
+					(thickness 0.12)
+				)
+			)
+		)
+		(fp_text user "D11"
+			(at 32 13.22 180)
+			(layer "B.SilkS")
+			(uuid "43878375-0e17-420f-8126-851872724950")
+			(effects
+				(font
+					(size 0.8 0.8)
+					(thickness 0.12)
+				)
+			)
+		)
+		(fp_text user "A4"
+			(at 10 13.22 180)
+			(layer "B.SilkS")
+			(uuid "4bb7c316-6e60-4176-b9c0-362d2c20f122")
+			(effects
+				(font
+					(size 0.8 0.8)
+					(thickness 0.12)
+				)
+			)
+		)
+		(fp_text user "D15"
+			(at 36 13.22 180)
+			(layer "B.SilkS")
+			(uuid "4e0c692f-9d72-4156-8d75-6c887e0c1068")
+			(effects
+				(font
+					(size 0.8 0.8)
+					(thickness 0.12)
+				)
+			)
+		)
+		(fp_text user "A15"
+			(at 20 13.22 180)
+			(layer "B.SilkS")
+			(uuid "5c1ec9b2-dc9f-4577-ac8b-bc0e07f1ec4f")
+			(effects
+				(font
+					(size 0.8 0.8)
+					(thickness 0.12)
+				)
+			)
+		)
+		(fp_text user "D7"
+			(at 28 13.22 180)
+			(layer "B.SilkS")
+			(uuid "66f96e5b-fb77-454e-a5fb-3e8148ec04a1")
+			(effects
+				(font
+					(size 0.8 0.8)
+					(thickness 0.12)
+				)
+			)
+		)
+		(fp_text user "GND"
+			(at 0 13.22 180)
+			(layer "B.SilkS")
+			(uuid "6787db63-dc4c-4107-80c0-f22138790ef0")
+			(effects
+				(font
+					(size 0.8 0.8)
+					(thickness 0.12)
+				)
+			)
+		)
+		(fp_text user "+5V"
+			(at 38 13.22 180)
+			(layer "B.SilkS")
+			(uuid "681019c6-bb7c-4249-8481-2d0700f6ee59")
+			(effects
+				(font
+					(size 0.8 0.8)
+					(thickness 0.12)
+				)
+			)
+		)
+		(fp_text user "A9"
+			(at 16 13.22 180)
+			(layer "B.SilkS")
+			(uuid "6e6f5203-f3f1-4802-beae-a187eb5f7820")
+			(effects
+				(font
+					(size 0.8 0.8)
+					(thickness 0.12)
+				)
+			)
+		)
+		(fp_text user "D5"
+			(at 26 13.22 180)
+			(layer "B.SilkS")
+			(uuid "b901d304-442d-461e-83f7-1c366d16c618")
+			(effects
+				(font
+					(size 0.8 0.8)
+					(thickness 0.12)
+				)
+			)
+		)
+		(fp_text user "D9"
+			(at 30 13.22 180)
+			(layer "B.SilkS")
+			(uuid "bfc6aed3-09ba-4a21-8a8a-9d37f778a366")
+			(effects
+				(font
+					(size 0.8 0.8)
+					(thickness 0.12)
+				)
+			)
+		)
+		(fp_text user "A14"
+			(at 18 13.22 180)
+			(layer "B.SilkS")
+			(uuid "c5622235-62e1-42cf-a01d-bf9d7251115f")
+			(effects
+				(font
+					(size 0.8 0.8)
+					(thickness 0.12)
+				)
+			)
+		)
+		(fp_text user "D3"
+			(at 24 13.22 180)
+			(layer "B.SilkS")
+			(uuid "c7d95904-e0cb-4fa0-b807-f45574a10e7f")
+			(effects
+				(font
+					(size 0.8 0.8)
+					(thickness 0.12)
+				)
+			)
+		)
+		(fp_text user "GND"
+			(at 2 13.22 180)
+			(layer "B.SilkS")
+			(uuid "e6aad8d9-ad06-46f0-bf29-b8995fa80813")
+			(effects
+				(font
+					(size 0.8 0.8)
+					(thickness 0.12)
+				)
+			)
 		)
 		(fp_text user "BOARD EDGE (verified, Eagle y=0)"
 			(at 19 -1.5 90)
@@ -5566,7 +6006,7 @@
 		(pad "1" smd rect
 			(at 38 6.22 90)
 			(size 1.1 11)
-			(layers "F.Cu")
+			(layers "F.Cu" "F.Mask")
 			(net 111 "+5V_CART")
 			(pinfunction "+5V")
 			(pintype "passive")
@@ -5575,7 +6015,7 @@
 		(pad "2" smd rect
 			(at 38 6.22 90)
 			(size 1.1 11)
-			(layers "B.Cu")
+			(layers "B.Cu" "B.Mask")
 			(net 111 "+5V_CART")
 			(pinfunction "+5V")
 			(pintype "passive")
@@ -5584,7 +6024,7 @@
 		(pad "3" smd rect
 			(at 36 6.22 90)
 			(size 1.1 11)
-			(layers "F.Cu")
+			(layers "F.Cu" "F.Mask")
 			(net 39 "D14")
 			(pinfunction "D14")
 			(pintype "passive")
@@ -5593,7 +6033,7 @@
 		(pad "4" smd rect
 			(at 36 6.22 90)
 			(size 1.1 11)
-			(layers "B.Cu")
+			(layers "B.Cu" "B.Mask")
 			(net 54 "D15")
 			(pinfunction "D15")
 			(pintype "passive")
@@ -5602,7 +6042,7 @@
 		(pad "5" smd rect
 			(at 34 6.22 90)
 			(size 1.1 11)
-			(layers "F.Cu")
+			(layers "F.Cu" "F.Mask")
 			(net 21 "D12")
 			(pinfunction "D12")
 			(pintype "passive")
@@ -5611,7 +6051,7 @@
 		(pad "6" smd rect
 			(at 34 6.22 90)
 			(size 1.1 11)
-			(layers "B.Cu")
+			(layers "B.Cu" "B.Mask")
 			(net 46 "D13")
 			(pinfunction "D13")
 			(pintype "passive")
@@ -5620,7 +6060,7 @@
 		(pad "7" smd rect
 			(at 32 6.22 90)
 			(size 1.1 11)
-			(layers "F.Cu")
+			(layers "F.Cu" "F.Mask")
 			(net 50 "D10")
 			(pinfunction "D10")
 			(pintype "passive")
@@ -5629,7 +6069,7 @@
 		(pad "8" smd rect
 			(at 32 6.22 90)
 			(size 1.1 11)
-			(layers "B.Cu")
+			(layers "B.Cu" "B.Mask")
 			(net 55 "D11")
 			(pinfunction "D11")
 			(pintype "passive")
@@ -5638,7 +6078,7 @@
 		(pad "9" smd rect
 			(at 30 6.22 90)
 			(size 1.1 11)
-			(layers "F.Cu")
+			(layers "F.Cu" "F.Mask")
 			(net 40 "D8")
 			(pinfunction "D8")
 			(pintype "passive")
@@ -5647,7 +6087,7 @@
 		(pad "10" smd rect
 			(at 30 6.22 90)
 			(size 1.1 11)
-			(layers "B.Cu")
+			(layers "B.Cu" "B.Mask")
 			(net 30 "D9")
 			(pinfunction "D9")
 			(pintype "passive")
@@ -5656,7 +6096,7 @@
 		(pad "11" smd rect
 			(at 28 6.22 90)
 			(size 1.1 11)
-			(layers "F.Cu")
+			(layers "F.Cu" "F.Mask")
 			(net 53 "D6")
 			(pinfunction "D6")
 			(pintype "passive")
@@ -5665,7 +6105,7 @@
 		(pad "12" smd rect
 			(at 28 6.22 90)
 			(size 1.1 11)
-			(layers "B.Cu")
+			(layers "B.Cu" "B.Mask")
 			(net 49 "D7")
 			(pinfunction "D7")
 			(pintype "passive")
@@ -5674,7 +6114,7 @@
 		(pad "13" smd rect
 			(at 26 6.22 90)
 			(size 1.1 11)
-			(layers "F.Cu")
+			(layers "F.Cu" "F.Mask")
 			(net 26 "D4")
 			(pinfunction "D4")
 			(pintype "passive")
@@ -5683,7 +6123,7 @@
 		(pad "14" smd rect
 			(at 26 6.22 90)
 			(size 1.1 11)
-			(layers "B.Cu")
+			(layers "B.Cu" "B.Mask")
 			(net 31 "D5")
 			(pinfunction "D5")
 			(pintype "passive")
@@ -5692,7 +6132,7 @@
 		(pad "15" smd rect
 			(at 24 6.22 90)
 			(size 1.1 11)
-			(layers "F.Cu")
+			(layers "F.Cu" "F.Mask")
 			(net 23 "D2")
 			(pinfunction "D2")
 			(pintype "passive")
@@ -5701,7 +6141,7 @@
 		(pad "16" smd rect
 			(at 24 6.22 90)
 			(size 1.1 11)
-			(layers "B.Cu")
+			(layers "B.Cu" "B.Mask")
 			(net 37 "D3")
 			(pinfunction "D3")
 			(pintype "passive")
@@ -5710,7 +6150,7 @@
 		(pad "17" smd rect
 			(at 22 6.22 90)
 			(size 1.1 11)
-			(layers "F.Cu")
+			(layers "F.Cu" "F.Mask")
 			(net 45 "D0")
 			(pinfunction "D0")
 			(pintype "passive")
@@ -5719,7 +6159,7 @@
 		(pad "18" smd rect
 			(at 22 6.22 90)
 			(size 1.1 11)
-			(layers "B.Cu")
+			(layers "B.Cu" "B.Mask")
 			(net 48 "D1")
 			(pinfunction "D1")
 			(pintype "passive")
@@ -5728,7 +6168,7 @@
 		(pad "19" smd rect
 			(at 20 6.22 90)
 			(size 1.1 11)
-			(layers "F.Cu")
+			(layers "F.Cu" "F.Mask")
 			(net 35 "A13")
 			(pinfunction "A13")
 			(pintype "passive")
@@ -5737,7 +6177,7 @@
 		(pad "20" smd rect
 			(at 20 6.22 90)
 			(size 1.1 11)
-			(layers "B.Cu")
+			(layers "B.Cu" "B.Mask")
 			(net 25 "A15")
 			(pinfunction "A15")
 			(pintype "passive")
@@ -5746,7 +6186,7 @@
 		(pad "21" smd rect
 			(at 18 6.22 90)
 			(size 1.1 11)
-			(layers "F.Cu")
+			(layers "F.Cu" "F.Mask")
 			(net 33 "A8")
 			(pinfunction "A8")
 			(pintype "passive")
@@ -5755,7 +6195,7 @@
 		(pad "22" smd rect
 			(at 18 6.22 90)
 			(size 1.1 11)
-			(layers "B.Cu")
+			(layers "B.Cu" "B.Mask")
 			(net 47 "A14")
 			(pinfunction "A14")
 			(pintype "passive")
@@ -5764,7 +6204,7 @@
 		(pad "23" smd rect
 			(at 16 6.22 90)
 			(size 1.1 11)
-			(layers "F.Cu")
+			(layers "F.Cu" "F.Mask")
 			(net 52 "A7")
 			(pinfunction "A7")
 			(pintype "passive")
@@ -5773,7 +6213,7 @@
 		(pad "24" smd rect
 			(at 16 6.22 90)
 			(size 1.1 11)
-			(layers "B.Cu")
+			(layers "B.Cu" "B.Mask")
 			(net 28 "A9")
 			(pinfunction "A9")
 			(pintype "passive")
@@ -5782,7 +6222,7 @@
 		(pad "25" smd rect
 			(at 14 6.22 90)
 			(size 1.1 11)
-			(layers "F.Cu")
+			(layers "F.Cu" "F.Mask")
 			(net 43 "A6")
 			(pinfunction "A6")
 			(pintype "passive")
@@ -5791,7 +6231,7 @@
 		(pad "26" smd rect
 			(at 14 6.22 90)
 			(size 1.1 11)
-			(layers "B.Cu")
+			(layers "B.Cu" "B.Mask")
 			(net 51 "A10")
 			(pinfunction "A10")
 			(pintype "passive")
@@ -5800,7 +6240,7 @@
 		(pad "27" smd rect
 			(at 12 6.22 90)
 			(size 1.1 11)
-			(layers "F.Cu")
+			(layers "F.Cu" "F.Mask")
 			(net 34 "A5")
 			(pinfunction "A5")
 			(pintype "passive")
@@ -5809,7 +6249,7 @@
 		(pad "28" smd rect
 			(at 12 6.22 90)
 			(size 1.1 11)
-			(layers "B.Cu")
+			(layers "B.Cu" "B.Mask")
 			(net 27 "A12")
 			(pinfunction "A12")
 			(pintype "passive")
@@ -5818,7 +6258,7 @@
 		(pad "29" smd rect
 			(at 10 6.22 90)
 			(size 1.1 11)
-			(layers "F.Cu")
+			(layers "F.Cu" "F.Mask")
 			(net 44 "A11")
 			(pinfunction "A11")
 			(pintype "passive")
@@ -5827,7 +6267,7 @@
 		(pad "30" smd rect
 			(at 10 6.22 90)
 			(size 1.1 11)
-			(layers "B.Cu")
+			(layers "B.Cu" "B.Mask")
 			(net 29 "A4")
 			(pinfunction "A4")
 			(pintype "passive")
@@ -5836,7 +6276,7 @@
 		(pad "31" smd rect
 			(at 8 6.22 90)
 			(size 1.1 11)
-			(layers "F.Cu")
+			(layers "F.Cu" "F.Mask")
 			(net 32 "{slash}ROM3")
 			(pinfunction "/ROM3")
 			(pintype "passive")
@@ -5845,7 +6285,7 @@
 		(pad "32" smd rect
 			(at 8 6.22 90)
 			(size 1.1 11)
-			(layers "B.Cu")
+			(layers "B.Cu" "B.Mask")
 			(net 42 "A3")
 			(pinfunction "A3")
 			(pintype "passive")
@@ -5854,7 +6294,7 @@
 		(pad "33" smd rect
 			(at 6 6.22 90)
 			(size 1.1 11)
-			(layers "F.Cu")
+			(layers "F.Cu" "F.Mask")
 			(net 24 "{slash}ROM4")
 			(pinfunction "/ROM4")
 			(pintype "passive")
@@ -5863,7 +6303,7 @@
 		(pad "34" smd rect
 			(at 6 6.22 90)
 			(size 1.1 11)
-			(layers "B.Cu")
+			(layers "B.Cu" "B.Mask")
 			(net 38 "A2")
 			(pinfunction "A2")
 			(pintype "passive")
@@ -5872,7 +6312,7 @@
 		(pad "35" smd rect
 			(at 4 6.22 90)
 			(size 1.1 11)
-			(layers "F.Cu")
+			(layers "F.Cu" "F.Mask")
 			(net 22 "{slash}UDS")
 			(pinfunction "/UDS")
 			(pintype "passive")
@@ -5881,7 +6321,7 @@
 		(pad "36" smd rect
 			(at 4 6.22 90)
 			(size 1.1 11)
-			(layers "B.Cu")
+			(layers "B.Cu" "B.Mask")
 			(net 41 "A1")
 			(pinfunction "A1")
 			(pintype "passive")
@@ -5890,7 +6330,7 @@
 		(pad "37" smd rect
 			(at 2 6.22 90)
 			(size 1.1 11)
-			(layers "F.Cu")
+			(layers "F.Cu" "F.Mask")
 			(net 36 "{slash}LDS")
 			(pinfunction "/LDS")
 			(pintype "passive")
@@ -5899,7 +6339,7 @@
 		(pad "38" smd rect
 			(at 2 6.22 90)
 			(size 1.1 11)
-			(layers "B.Cu")
+			(layers "B.Cu" "B.Mask")
 			(net 3 "GND")
 			(pinfunction "GND")
 			(pintype "passive")
@@ -5908,7 +6348,7 @@
 		(pad "39" smd rect
 			(at 0 6.22 90)
 			(size 1.1 11)
-			(layers "F.Cu")
+			(layers "F.Cu" "F.Mask")
 			(net 3 "GND")
 			(pinfunction "GND")
 			(pintype "passive")
@@ -5917,7 +6357,7 @@
 		(pad "40" smd rect
 			(at 0 6.22 90)
 			(size 1.1 11)
-			(layers "B.Cu")
+			(layers "B.Cu" "B.Mask")
 			(net 3 "GND")
 			(pinfunction "GND")
 			(pintype "passive")
