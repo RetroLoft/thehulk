@@ -2,9 +2,13 @@
 //
 // The FPGA runs from the Atari's 5 V only, the ESP32 also from USB. Main loop:
 //   1. wait until the Atari powers the FPGA side (PWR_ON),
-//   2. configure the FPGA, upload the cartridge image (GEMDRIVE) and enable it,
-//   3. verify the image afterwards, then watch the bus until the Atari is switched
-//      off (PWR_ON or CDONE low), drive all FPGA lines low and start over.
+//   2. configure the FPGA, upload the cartridge image (GEMDRIVE) and enable it, then
+//      write the rest of the 128 KB (the GEMDRIVE shared memory in ROM3),
+//   3. answer the GEMDRIVE commands until the Atari is switched off (PWR_ON or CDONE
+//      low), drive all FPGA lines low and start over.
+//
+// The cartridge space is kept in a shadow (shadow.c); after each command the changed
+// parts are written to the FPGA's SPRAM.
 //
 // The cartridge is enabled ~0.3 s after the Atari is switched on; TOS 1.04 on an ST
 // without hard disk reads the cartridge first after ~0.67 s (fastest case measured).
@@ -18,7 +22,9 @@
 #include "board.h"
 #include "bootrec.h"
 #include "fpga.h"
+#include "gemdrv.h"
 #include "hulk.h"
+#include "shadow.h"
 #include "status_led.h"
 
 static const char *TAG = "hulk";
@@ -41,46 +47,17 @@ static size_t rom_len(void)
     return len > HULK_ROM_SIZE ? HULK_ROM_SIZE : len;
 }
 
-// Fill the rest of the 128 KB window with 0xFF. Not on the boot path: for a small
-// image this takes far longer than the image itself.
-static void fill_rom_rest(size_t len)
-{
-    static const uint8_t ff[256] = { [0 ... 255] = 0xff };
-    for (size_t off = (len + 1) & ~1u; off < HULK_ROM_SIZE; off += sizeof(ff))
-        hulk_write(off, ff, off + sizeof(ff) <= HULK_ROM_SIZE ? sizeof(ff) : HULK_ROM_SIZE - off);
-}
-
-static int verify_rom(const uint8_t *rom, size_t len)
-{
-    static uint8_t buf[4096];
-    int errors = 0;
-    for (size_t off = 0; off < len; off += sizeof(buf)) {
-        size_t n = len - off < sizeof(buf) ? len - off : sizeof(buf);
-        hulk_read(off, buf, n);
-        for (size_t i = 0; i < n; i++) {
-            if (buf[i] != rom[off + i] && errors++ < 8)
-                ESP_LOGE(TAG, "verify %05x: read %02x, expected %02x",
-                         (unsigned)(off + i), buf[i], rom[off + i]);
-        }
-    }
-    return errors;
-}
-
-// Command packets from the Atari: /IRQ is low while one is waiting. For now they are
-// only logged, nothing answers them yet.
+// Command packets from the Atari: /IRQ is low while one is waiting. The packet is
+// acknowledged first (the FPGA can take the next one), then answered.
 static void handle_packets(void)
 {
     static hulk_packet_t pkt;
     while (!gpio_get_level(PIN_FPGA_IRQ)) {
         if (hulk_get_packet(&pkt) != ESP_OK)
             return;
-        char line[64] = "";
-        size_t words = (pkt.size + 1) / 2, len = 0;
-        for (size_t i = 0; i < words && i < 8; i++)
-            len += snprintf(line + len, sizeof(line) - len, " %04x", pkt.words[i]);
-        ESP_LOGI(TAG, "command %u (0x%04x), %u bytes:%s%s", pkt.cmd, pkt.cmd, pkt.size, line,
-                 words > 8 ? " ..." : "");
         hulk_ack_packet();
+        gemdrv_command(&pkt);
+        shadow_sync();
     }
 }
 
@@ -88,6 +65,9 @@ static void handle_packets(void)
 static void start_cartridge(void)
 {
     memset(&s_rec, 0, sizeof(s_rec));
+    shadow_init();
+    shadow_load_image(rom_start, rom_len());
+    gemdrv_init();
     s_rec.reset_reason = esp_reset_reason();
     s_rec.brownouts = bootrec_brownouts();
     s_rec.waited = !fpga_power_present();
@@ -109,7 +89,7 @@ static void start_cartridge(void)
             int version = hulk_probe();
             if (version >= 0) {
                 hulk_set_ctrl(0);
-                hulk_write(0, rom_start, rom_len());
+                shadow_write_range(0, rom_len());      // the image first: boot path
                 hulk_set_ctrl(HULK_CTRL_ROM_EN);
                 s_rec.t_enabled = now_ms();
                 hulk_status_t st;
@@ -117,8 +97,11 @@ static void start_cartridge(void)
                     s_rec.addr_changes = st.addr_changes;
                     s_rec.early = st.early_count;
                 }
-                ESP_LOGI(TAG, "cartridge enabled (gateware v%d, image %u bytes)",
-                         version, (unsigned)rom_len());
+                // Then the rest, GEMDRIVE reads its shared memory ~2 s after power-on
+                size_t done = (rom_len() + 1) & ~1u;
+                shadow_write_range(done, HULK_ROM_SIZE - done);
+                ESP_LOGI(TAG, "cartridge enabled (gateware v%d, image %u bytes, %lu ms)",
+                         version, (unsigned)rom_len(), (unsigned long)(now_ms() - s_rec.t_enabled));
                 status_led_set(STATUS_ACTIVE);
                 return;
             }
@@ -165,17 +148,14 @@ void app_main(void)
                 s_rec.t_init = now_ms();
         }
         if (fpga_power_present() && fpga_done()) {
-            fill_rom_rest(rom_len());
-            int errors = verify_rom(rom_start, rom_len());
-            s_rec.verify_errors = errors > 255 ? 255 : errors;
+            int errors = shadow_verify();
+            s_rec.verify_errors = errors > 255 || errors < 0 ? 255 : errors;
             bootrec_save(&s_rec);
             bootrec_print();
             if (errors) {
-                ESP_LOGE(TAG, "cartridge verify: %d errors, reloading", errors);
+                ESP_LOGE(TAG, "cartridge verify: %d errors, rewriting", errors);
                 status_led_set(STATUS_ERROR);
-                hulk_set_ctrl(0);
-                hulk_write(0, rom_start, rom_len());
-                hulk_set_ctrl(HULK_CTRL_ROM_EN);
+                shadow_write_range(0, HULK_ROM_SIZE);
                 status_led_set(STATUS_ACTIVE);
             }
         }
