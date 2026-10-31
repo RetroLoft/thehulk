@@ -20,33 +20,14 @@ static spi_device_handle_t s_cfg_dev;    // mode 3, configuration
 static spi_device_handle_t s_user_dev;   // mode 0, gateware commands
 static uint8_t *s_dma;                   // DMA bounce buffer (tx)
 static uint8_t *s_dma_rx;                // DMA bounce buffer (rx)
+static bool s_bus_on;
 
-esp_err_t fpga_init(void)
+// The SPI bus is only attached while the FPGA side is powered. Otherwise SCK (idle high
+// in mode 3) and MOSI would feed the unpowered FPGA through its I/O protection diodes.
+static void bus_on(void)
 {
-    gpio_config_t out = {
-        .pin_bit_mask = BIT64(PIN_FPGA_CRESET) | BIT64(PIN_FPGA_CS),
-        .mode = GPIO_MODE_INPUT_OUTPUT,
-    };
-    gpio_set_level(PIN_FPGA_CS, 0);
-    gpio_set_level(PIN_FPGA_CRESET, 0);
-    ESP_ERROR_CHECK(gpio_config(&out));
-
-    // CDONE and /IRQ have pull-ups to +3V3_LOGIC on the board (R1, R9): with a weak
-    // pull-down they read low when the FPGA side is unpowered.
-    gpio_config_t in = {
-        .pin_bit_mask = BIT64(PIN_FPGA_CDONE) | BIT64(PIN_FPGA_IRQ),
-        .mode = GPIO_MODE_INPUT,
-        .pull_down_en = GPIO_PULLDOWN_ENABLE,
-    };
-    ESP_ERROR_CHECK(gpio_config(&in));
-
-    // PWR_ON is +3V3_LOGIC through R10 (10k): no pull-down, it would form a divider
-    gpio_config_t pwr = {
-        .pin_bit_mask = BIT64(PIN_PWR_ON),
-        .mode = GPIO_MODE_INPUT,
-    };
-    ESP_ERROR_CHECK(gpio_config(&pwr));
-
+    if (s_bus_on)
+        return;
     spi_bus_config_t bus = {
         .mosi_io_num = PIN_FPGA_MOSI,
         .miso_io_num = PIN_FPGA_MISO,
@@ -75,6 +56,58 @@ esp_err_t fpga_init(void)
         .flags = SPI_DEVICE_HALFDUPLEX,    // command, address, then write or read
     };
     ESP_ERROR_CHECK(spi_bus_add_device(FPGA_SPI_HOST, &user, &s_user_dev));
+    s_bus_on = true;
+}
+
+static void bus_off(void)
+{
+    if (s_bus_on) {
+        spi_bus_remove_device(s_cfg_dev);
+        spi_bus_remove_device(s_user_dev);
+        spi_bus_free(FPGA_SPI_HOST);
+        s_bus_on = false;
+    }
+    gpio_config_t low = {
+        .pin_bit_mask = BIT64(PIN_FPGA_SCK) | BIT64(PIN_FPGA_MOSI),
+        .mode = GPIO_MODE_OUTPUT,
+    };
+    gpio_set_level(PIN_FPGA_SCK, 0);
+    gpio_set_level(PIN_FPGA_MOSI, 0);
+    gpio_config(&low);
+    gpio_config_t in = {
+        .pin_bit_mask = BIT64(PIN_FPGA_MISO),
+        .mode = GPIO_MODE_INPUT,
+        .pull_down_en = GPIO_PULLDOWN_ENABLE,
+    };
+    gpio_config(&in);
+}
+
+esp_err_t fpga_init(void)
+{
+    gpio_config_t out = {
+        .pin_bit_mask = BIT64(PIN_FPGA_CRESET) | BIT64(PIN_FPGA_CS),
+        .mode = GPIO_MODE_INPUT_OUTPUT,
+    };
+    gpio_set_level(PIN_FPGA_CS, 0);
+    gpio_set_level(PIN_FPGA_CRESET, 0);
+    ESP_ERROR_CHECK(gpio_config(&out));
+
+    // CDONE and /IRQ have pull-ups to +3V3_LOGIC on the board (R1, R9): with a weak
+    // pull-down they read low when the FPGA side is unpowered.
+    gpio_config_t in = {
+        .pin_bit_mask = BIT64(PIN_FPGA_CDONE) | BIT64(PIN_FPGA_IRQ),
+        .mode = GPIO_MODE_INPUT,
+        .pull_down_en = GPIO_PULLDOWN_ENABLE,
+    };
+    ESP_ERROR_CHECK(gpio_config(&in));
+
+    // PWR_ON is +3V3_LOGIC through R10 (10k): no pull-down, it would form a divider
+    gpio_config_t pwr = {
+        .pin_bit_mask = BIT64(PIN_PWR_ON),
+        .mode = GPIO_MODE_INPUT,
+    };
+    ESP_ERROR_CHECK(gpio_config(&pwr));
+    bus_off();
 
     s_dma = heap_caps_malloc(CHUNK, MALLOC_CAP_DMA);
     s_dma_rx = heap_caps_malloc(CHUNK, MALLOC_CAP_DMA);
@@ -90,6 +123,7 @@ void fpga_safe(void)
 {
     gpio_set_level(PIN_FPGA_CS, 0);
     gpio_set_level(PIN_FPGA_CRESET, 0);
+    bus_off();
 }
 
 bool fpga_done(void)
@@ -123,6 +157,7 @@ esp_err_t fpga_configure(const uint8_t *bitstream, size_t len)
 {
     int64_t t0 = esp_timer_get_time();
 
+    bus_on();
     spi_device_acquire_bus(s_cfg_dev, portMAX_DELAY);
 
     // SPI_SS stays low during the whole sequence (tested on v1: the 8 clocks with SS

@@ -84,6 +84,8 @@ static void start_cartridge(void)
     s_rec.t_power = now_ms();
 
     for (;;) {
+        if (s_rec.attempts < 255)
+            s_rec.attempts++;
         if (fpga_configure(bitstream_start, bitstream_end - bitstream_start) == ESP_OK) {
             s_rec.t_configured = now_ms();
             int version = hulk_probe();
@@ -127,15 +129,19 @@ void app_main(void)
     for (;;) {
         start_cartridge();
 
-        // Note the first cartridge reads, then verify once the Atari has had its
-        // chance to read the cartridge
-        while (now_ms() - s_rec.t_enabled < 3000) {
+        // Note the first cartridge reads: the header check by TOS, GEMDRIVE running
+        // (many /ROM4 reads) and its first command (/ROM3). Verify afterwards, once
+        // the Atari has had its chance to read the cartridge.
+        while (fpga_power_present() && now_ms() - s_rec.t_enabled < 20000 &&
+               !(s_rec.t_rom3 && now_ms() - s_rec.t_enabled >= 3000)) {
             hulk_status_t st;
             vTaskDelay(1);
             if (hulk_get_status(&st) != ESP_OK)
                 continue;
             if (!s_rec.t_rom4 && st.rom4_count)
                 s_rec.t_rom4 = now_ms();
+            if (!s_rec.t_init && st.rom4_count > 32)
+                s_rec.t_init = now_ms();
             if (!s_rec.t_rom3 && st.rom3_count)
                 s_rec.t_rom3 = now_ms();
         }
@@ -176,5 +182,12 @@ void app_main(void)
         fpga_safe();
         status_led_set(STATUS_WAIT_POWER);
         ESP_LOGI(TAG, "Atari switched off: FPGA lines driven low");
+
+        // PWR_ON stays high for a while as the capacitors discharge: do not configure
+        // the FPGA on a collapsing supply. Still high after 2 s: the FPGA lost its
+        // configuration with the Atari on, so configure it again.
+        int64_t off = esp_timer_get_time();
+        while (fpga_power_present() && esp_timer_get_time() - off < 2000000)
+            vTaskDelay(pdMS_TO_TICKS(5));
     }
 }

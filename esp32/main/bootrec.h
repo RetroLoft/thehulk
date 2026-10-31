@@ -13,10 +13,12 @@ typedef struct {
     uint32_t t_power;        // ms since the app started: PWR_ON seen
     uint32_t t_configured;   // FPGA configured
     uint32_t t_enabled;      // cartridge enabled
-    uint32_t t_rom4;         // first /ROM4 read, 0 = none in the first 3 s
-    uint32_t t_rom3;         // first /ROM3 read, 0 = none in the first 3 s
+    uint32_t t_rom4;         // first /ROM4 read (header check), 0 = none within 20 s
+    uint32_t t_init;         // more than 32 /ROM4 reads: cartridge code running
+    uint32_t t_rom3;         // first /ROM3 read (first GEMDRIVE command)
     uint32_t addr_changes;   // address bus activity when the cartridge was enabled
     uint16_t early;          // ROM reads before the cartridge was enabled
+    uint8_t  attempts;       // FPGA configuration attempts
 } bootrec_t;
 
 // Call first in app_main: counts brown-out resets in RTC memory.

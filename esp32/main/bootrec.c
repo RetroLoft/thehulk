@@ -79,11 +79,12 @@ void bootrec_print(void)
         if (!r->t_enabled)
             continue;
         ESP_LOGI(TAG, "%s, reset %u, brownouts %u: power %lu, configured %lu, enabled %lu, "
-                 "first ROM4 %lu, first ROM3 %lu, early %u, Atari active at enable %s, verify errors %u",
+                 "first ROM4 %lu, code running %lu, first ROM3 %lu, early %u, Atari active at enable %s, verify errors %u, "
+                 "configuration attempts %u",
                  r->waited ? "USB" : "cold", r->reset_reason, r->brownouts,
                  (unsigned long)r->t_power, (unsigned long)r->t_configured,
                  (unsigned long)r->t_enabled, (unsigned long)r->t_rom4,
-                 (unsigned long)r->t_rom3, r->early, r->addr_changes ? "yes" : "no",
-                 r->verify_errors);
+                 (unsigned long)r->t_init, (unsigned long)r->t_rom3, r->early, r->addr_changes ? "yes" : "no",
+                 r->verify_errors, r->attempts);
     }
 }
