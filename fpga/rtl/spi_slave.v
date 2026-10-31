@@ -12,13 +12,19 @@
 //   0x01 WRITE   addr[23:16] addr[15:8] addr[7:0] data...  (byte address, even,
 //                big-endian words: first byte = D15..D8, auto increment)
 //   0x02 READ    addr[23:16] addr[15:8] addr[7:0] dummy  -> data...
+//                (address bit 23 set: the command packet buffer instead of the SPRAM,
+//                 word 0 = command, word 1 = payload size in bytes, then the payload)
 //   0x03 ID      dummy -> 'H' 'U' 'L' 'K' version
 //   0x04 CTRL    ctrl     bit0: ROM emulation enabled
 //   0x05 STATUS  dummy -> ctrl rom4_count[31:0] rom3_count[31:0] last_addr[15:0]
-//                   addr_changes[31:0] early_count[15:0]
+//                   addr_changes[31:0] early_count[15:0] pkt_ready[7:0]
+//                   pkt_count[15:0] pkt_drops[15:0]
 //                   (last_addr = {bank, A15..A1}, bank 1 = /ROM3; addr_changes counts
 //                    address bus changes, i.e. ST activity; early_count counts ROM
-//                    cycles while ROM emulation was disabled)
+//                    cycles while ROM emulation was disabled; pkt_count counts the
+//                    command packets received, pkt_drops the ones that arrived while
+//                    the previous packet was not acknowledged yet)
+//   0x06 ACK     the ESP32 has read the packet: release /IRQ, accept the next one
 
 `default_nettype none
 
@@ -34,23 +40,29 @@ module spi_slave (
     output reg  [15:0] wr_data,
     output reg         rd_req,
     output reg  [15:0] rd_addr,
+    output reg         rd_pkt,      // rd_addr is in the command packet buffer
     input  wire [15:0] rd_data,
 
     output wire        rom_enable,
+    output reg         pkt_ack,
 
     input  wire [31:0] rom4_count,
     input  wire [31:0] rom3_count,
     input  wire [15:0] last_addr,
     input  wire [31:0] addr_changes,
-    input  wire [15:0] early_count
+    input  wire [15:0] early_count,
+    input  wire        pkt_ready,
+    input  wire [15:0] pkt_count,
+    input  wire [15:0] pkt_drops
 );
-    localparam [7:0] VERSION = 8'h08;
+    localparam [7:0] VERSION = 8'h09;
 
     localparam CMD_WRITE  = 8'h01;
     localparam CMD_READ   = 8'h02;
     localparam CMD_ID     = 8'h03;
     localparam CMD_CTRL   = 8'h04;
     localparam CMD_STATUS = 8'h05;
+    localparam CMD_ACK    = 8'h06;
 
     localparam S_CMD    = 4'd0;
     localparam S_ADDR   = 4'd1;
@@ -92,11 +104,12 @@ module spi_slave (
     reg        phase;
     reg [7:0]  hi_byte;
     reg [7:0]  ctrl = 8'h00;
-    reg [127:0] stream;         // bytes still to be sent in S_STREAM, MSB first
+    reg [167:0] stream;         // bytes still to be sent in S_STREAM, MSB first
 
     reg        byte_stb;        // one clock after the 8th rising SCK edge
     reg [7:0]  byte_rx;
-    reg        is_wr, is_rd, is_id, is_status, is_ctrl;   // decoded byte_rx
+    reg        is_wr, is_rd, is_id, is_status, is_ctrl, is_ack;   // decoded byte_rx
+    reg        is_stream;                                       // is_id | is_status
 
     assign miso       = tx_sr[7];
     assign rom_enable = ctrl[0];
@@ -117,6 +130,8 @@ module spi_slave (
             is_id     <= {rx_sr, bit_in} == CMD_ID;
             is_status <= {rx_sr, bit_in} == CMD_STATUS;
             is_ctrl   <= {rx_sr, bit_in} == CMD_CTRL;
+            is_ack    <= {rx_sr, bit_in} == CMD_ACK;
+            is_stream <= {rx_sr, bit_in} == CMD_ID || {rx_sr, bit_in} == CMD_STATUS;
         end
     end
 
@@ -140,8 +155,9 @@ module spi_slave (
     // clock after the last rising edge of a byte, and moved into tx_sr on the falling
     // edge that follows, so MISO only ever changes after a falling edge.
     always @(posedge clk) begin
-        wr_req <= 1'b0;
-        rd_req <= 1'b0;
+        wr_req  <= 1'b0;
+        rd_req  <= 1'b0;
+        pkt_ack <= 1'b0;
 
         if (frame_end) begin
             state      <= S_CMD;
@@ -159,14 +175,12 @@ module spi_slave (
                         state <= S_ADDR;
                     end else if (is_ctrl) begin
                         state <= S_CTRL;
-                    end else if (is_id) begin
-                        tx_next <= "H";
-                        stream  <= {"ULK", VERSION, 96'h0};
+                    end else if (is_stream) begin
+                        tx_next <= is_id ? "H" : ctrl;
                         state   <= S_PRE;
-                    end else if (is_status) begin
-                        tx_next <= ctrl;
-                        stream  <= {rom4_count, rom3_count, last_addr, addr_changes, early_count};
-                        state   <= S_PRE;
+                    end else if (is_ack) begin
+                        pkt_ack <= 1'b1;
+                        state   <= S_IGNORE;
                     end else begin
                         state <= S_IGNORE;
                     end
@@ -179,6 +193,7 @@ module spi_slave (
                         phase <= 1'b0;
                         if (cmd_rd) begin
                             rd_addr <= {addr[15:0], byte_rx} >> 1;
+                            rd_pkt  <= addr[15];
                             rd_req  <= 1'b1;
                             state   <= S_DUMMY;
                         end else begin
@@ -220,10 +235,8 @@ module spi_slave (
                     state      <= S_STREAM;
                 end
 
-                if (st_stream) begin
-                    tx_next <= stream[127:120];
-                    stream  <= {stream[119:0], 8'h00};
-                end
+                if (st_stream)
+                    tx_next <= stream[167:160];
 
                 if (st_ctrl) begin
                     ctrl  <= byte_rx;
@@ -231,6 +244,16 @@ module spi_slave (
                 end
 
             end
+        end
+
+        // The ID / STATUS stream: loaded with the command byte, shifted per byte sent
+        if (!frame_end && byte_stb) begin
+            if (st_cmd && is_stream)
+                stream <= is_id ? {"ULK", VERSION, 136'h0}
+                                : {rom4_count, rom3_count, last_addr, addr_changes, early_count,
+                                   7'h00, pkt_ready, pkt_count, pkt_drops};
+            else if (st_stream)
+                stream <= {stream[159:0], 8'h00};
         end
 
         // Advance the write address after the word has been written

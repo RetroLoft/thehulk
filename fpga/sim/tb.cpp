@@ -82,7 +82,8 @@ static std::vector<uint8_t> spi_xfer(const std::vector<uint8_t> &tx, size_t rx_l
 
 static std::vector<uint8_t> cmd_id(void)        { return spi_xfer({0x03, 0x00}, 5); }
 static void cmd_ctrl(uint8_t v)                 { spi_xfer({0x04, v}, 0); }
-static std::vector<uint8_t> cmd_status(void)    { return spi_xfer({0x05, 0x00}, 17); }
+static std::vector<uint8_t> cmd_status(void)    { return spi_xfer({0x05, 0x00}, 22); }
+static void cmd_ack(void)                       { spi_xfer({0x06}, 0); }
 
 static void cmd_write(uint32_t addr, const uint8_t *data, size_t len)
 {
@@ -127,6 +128,133 @@ static int bus_read(const std::vector<uint8_t> &img, uint32_t byte_addr, uint16_
     top.p_a.set<uint16_t>(rand() & 0x7fff);
     advance(150 + rand() % 100);
     return first_ok;
+}
+
+// --- Command channel: the Atari sends words as byte reads of 0xFB0000 + word ---
+static void atari_word(uint16_t w)
+{
+    top.p_a.set<uint16_t>(w >> 1);
+    top.p_uds__n.set<bool>(w & 1);       // odd byte: /LDS, /UDS stays high
+    advance(30 + rand() % 20);
+    top.p_rom3__n.set<bool>(false);
+    advance(250);
+    top.p_rom3__n.set<bool>(true);
+    advance(20);
+    top.p_a.set<uint16_t>(rand() & 0x7fff);
+    advance(100 + rand() % 100);
+}
+
+// The Atari polls the token address while it waits: reads that are not 0xABCD
+static void atari_poll(int n)
+{
+    for (int i = 0; i < n; i++) {
+        uint16_t w = rand();
+        atari_word(w == 0xabcd ? 0x1234 : w);
+    }
+}
+
+static void atari_packet(uint16_t cmd, const std::vector<uint16_t> &payload, uint16_t size)
+{
+    atari_word(0xabcd);
+    atari_word(cmd);
+    atari_word(size);
+    for (uint16_t w : payload)
+        atari_word(w);
+}
+
+struct status_t { uint32_t rom4, rom3, act; unsigned early, ready, count, drops; uint8_t ctrl; };
+
+static status_t get_status(void)
+{
+    std::vector<uint8_t> st = cmd_status();
+    status_t s;
+    s.ctrl  = st[0];
+    s.rom4  = (st[1] << 24) | (st[2] << 16) | (st[3] << 8) | st[4];
+    s.rom3  = (st[5] << 24) | (st[6] << 16) | (st[7] << 8) | st[8];
+    s.act   = (st[11] << 24) | (st[12] << 16) | (st[13] << 8) | st[14];
+    s.early = (st[15] << 8) | st[16];
+    s.ready = st[17];
+    s.count = (st[18] << 8) | st[19];
+    s.drops = (st[20] << 8) | st[21];
+    return s;
+}
+
+// Reads the packet buffer and compares it with the expected packet
+static int check_packet(const char *name, uint16_t cmd, uint16_t size, const std::vector<uint16_t> &payload)
+{
+    int err = 0;
+    size_t words = 2 + payload.size();
+    std::vector<uint8_t> rb = cmd_read(0x800000, words * 2);
+    std::vector<uint16_t> expect = { cmd, size };
+    expect.insert(expect.end(), payload.begin(), payload.end());
+    for (size_t i = 0; i < words; i++) {
+        uint16_t got = (rb[2 * i] << 8) | rb[2 * i + 1];
+        if (got != expect[i] && err++ < 5)
+            printf("%s: packet word %zu: %04x != %04x\n", name, i, got, expect[i]);
+    }
+    return err;
+}
+
+static int test_command_channel(void)
+{
+    int errors = 0;
+    status_t s = get_status();
+    unsigned count0 = s.count;
+    if (!top.p_irq__n.get<bool>() || s.ready) { printf("/IRQ low before any packet\n"); errors++; }
+
+    // A packet with token and parameters, surrounded by polling reads
+    atari_poll(20);
+    std::vector<uint16_t> p1 = { 0x5678, 0x1234, 0x0000, 0xffff, 0x00a5, 0xabcd };
+    atari_packet(0x0105, p1, 12);
+    if (top.p_irq__n.get<bool>()) { printf("/IRQ not low after a packet\n"); errors++; }
+    atari_poll(50);                              // the Atari waits for the token
+    errors += check_packet("p1", 0x0105, 12, p1);
+
+    // A second packet before the acknowledge is dropped
+    atari_packet(0x0007, { 0x1111, 0x2222 }, 4);
+    s = get_status();
+    if (!s.ready || s.count != count0 + 1 || s.drops != 1) {
+        printf("before ack: ready %u count %u drops %u\n", s.ready, s.count - count0, s.drops);
+        errors++;
+    }
+    errors += check_packet("p1 kept", 0x0105, 12, p1);
+
+    cmd_ack();
+    if (!top.p_irq__n.get<bool>()) { printf("/IRQ still low after the acknowledge\n"); errors++; }
+
+    // No payload, then an odd payload size (rounded up to whole words)
+    atari_packet(0x0002, {}, 0);
+    errors += check_packet("empty", 0x0002, 0, {});
+    cmd_ack();
+    std::vector<uint16_t> p3 = { 0xaaaa, 0xbbbb, 0xcc00 };
+    atari_packet(0x0003, p3, 5);
+    errors += check_packet("odd", 0x0003, 5, p3);
+    cmd_ack();
+
+    // A long packet (1024 payload bytes)
+    std::vector<uint16_t> p4;
+    for (int i = 0; i < 512; i++) p4.push_back(rand());
+    atari_packet(0x0004, p4, 1024);
+    errors += check_packet("long", 0x0004, 1024, p4);
+    cmd_ack();
+
+    // An incomplete packet: the decoder restarts 10 ms after its header
+    atari_packet(0x0099, { 0x1234 }, 8);         // 3 of 4 payload words missing
+    advance(12e6);                               // 10 ms +-10 % (HFOSC tolerance)
+    std::vector<uint16_t> p5 = { 0x4242, 0x4343 };
+    atari_packet(0x0005, p5, 4);
+    s = get_status();
+    if (!s.ready) { printf("no packet after the restart\n"); errors++; }
+    errors += check_packet("after restart", 0x0005, 4, p5);
+    cmd_ack();
+
+    s = get_status();
+    if (s.count != count0 + 5 || s.ready) {
+        printf("end: count %u (expected 5), ready %u\n", s.count - count0, s.ready);
+        errors++;
+    }
+    printf("command channel: %u packets, %u dropped, errors: %d\n", s.count - count0, s.drops, errors);
+    return errors;
 }
 
 int main(int argc, char **argv)
@@ -220,17 +348,24 @@ int main(int argc, char **argv)
     errors += bus_err;
 
     // Status
-    std::vector<uint8_t> st = cmd_status();
-    uint32_t c4 = (st[1] << 24) | (st[2] << 16) | (st[3] << 8) | st[4];
-    uint32_t c3 = (st[5] << 24) | (st[6] << 16) | (st[7] << 8) | st[8];
-    uint32_t act = (st[11] << 24) | (st[12] << 16) | (st[13] << 8) | st[14];
-    unsigned early = (st[15] << 8) | st[16];
-    printf("status: ctrl=%02x rom4=%u rom3=%u last=%04x addr_changes=%u early=%u\n",
-           st[0], c4, c3, (st[9] << 8) | st[10], act, early);
-    if (st[0] != 0x01) { printf("ctrl readback wrong\n"); errors++; }
-    if (c4 + c3 != N + 1) { printf("counter mismatch\n"); errors++; }
-    if (act < N) { printf("address activity counter too low\n"); errors++; }
-    if (early != 1) { printf("expected 1 early ROM cycle (the disabled bus read)\n"); errors++; }
+    status_t s = get_status();
+    printf("status: ctrl=%02x rom4=%u rom3=%u addr_changes=%u early=%u\n",
+           s.ctrl, s.rom4, s.rom3, s.act, s.early);
+    if (s.ctrl != 0x01) { printf("ctrl readback wrong\n"); errors++; }
+    if (s.rom4 + s.rom3 != N + 1) { printf("counter mismatch\n"); errors++; }
+    if (s.act < N) { printf("address activity counter too low\n"); errors++; }
+    if (s.early != 1) { printf("expected 1 early ROM cycle (the disabled bus read)\n"); errors++; }
+
+    errors += test_command_channel();
+
+    // The cartridge data must still be correct after the command traffic
+    int bus_err2 = 0;
+    for (int i = 0; i < 500; i++) {
+        uint32_t addr = (uint32_t)(rand() % 131072) & ~1u;
+        if (bus_read(img, addr, got) < 0 && bus_err2++ < 5)
+            printf("bus read %05x after commands failed: got %04x\n", addr, got);
+    }
+    errors += bus_err2;
 
     printf(errors ? "FAIL (%d errors)\n" : "PASS\n", errors);
     return errors ? 1 : 0;

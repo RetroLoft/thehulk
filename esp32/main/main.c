@@ -66,6 +66,24 @@ static int verify_rom(const uint8_t *rom, size_t len)
     return errors;
 }
 
+// Command packets from the Atari: /IRQ is low while one is waiting. For now they are
+// only logged, nothing answers them yet.
+static void handle_packets(void)
+{
+    static hulk_packet_t pkt;
+    while (!gpio_get_level(PIN_FPGA_IRQ)) {
+        if (hulk_get_packet(&pkt) != ESP_OK)
+            return;
+        char line[64] = "";
+        size_t words = (pkt.size + 1) / 2, len = 0;
+        for (size_t i = 0; i < words && i < 8; i++)
+            len += snprintf(line + len, sizeof(line) - len, " %04x", pkt.words[i]);
+        ESP_LOGI(TAG, "command %u (0x%04x), %u bytes:%s%s", pkt.cmd, pkt.cmd, pkt.size, line,
+                 words > 8 ? " ..." : "");
+        hulk_ack_packet();
+    }
+}
+
 // Wait for the Atari, configure the FPGA and enable the cartridge
 static void start_cartridge(void)
 {
@@ -138,12 +156,13 @@ void app_main(void)
             vTaskDelay(1);
             if (hulk_get_status(&st) != ESP_OK)
                 continue;
+            if (!s_rec.t_rom3 && st.rom3_count)
+                s_rec.t_rom3 = now_ms();
+            handle_packets();
             if (!s_rec.t_rom4 && st.rom4_count)
                 s_rec.t_rom4 = now_ms();
             if (!s_rec.t_init && st.rom4_count > 32)
                 s_rec.t_init = now_ms();
-            if (!s_rec.t_rom3 && st.rom3_count)
-                s_rec.t_rom3 = now_ms();
         }
         if (fpga_power_present() && fpga_done()) {
             fill_rom_rest(rom_len());
@@ -165,16 +184,18 @@ void app_main(void)
         hulk_status_t prev = { 0 }, st;
         int64_t last_log = 0;
         while (fpga_power_present() && fpga_done()) {
-            vTaskDelay(pdMS_TO_TICKS(10));
+            vTaskDelay(1);
+            handle_packets();
             if (hulk_get_status(&st) != ESP_OK)
                 continue;
             int64_t now = esp_timer_get_time();
             if ((st.rom4_count != prev.rom4_count || st.rom3_count != prev.rom3_count) &&
                 now - last_log > 1000000) {
                 last_log = now;
-                ESP_LOGI(TAG, "cartridge reads: ROM4 %lu, ROM3 %lu, last %06lx, early %u",
+                ESP_LOGI(TAG, "cartridge reads: ROM4 %lu, ROM3 %lu, last %06lx, early %u, "
+                         "packets %u, dropped %u",
                          (unsigned long)st.rom4_count, (unsigned long)st.rom3_count,
-                         (unsigned long)st.last_addr, st.early_count);
+                         (unsigned long)st.last_addr, st.early_count, st.pkt_count, st.pkt_drops);
             }
             prev = st;
         }
