@@ -14,7 +14,9 @@
 #include "freertos/task.h"
 #include "esp_log.h"
 #include "esp_timer.h"
+#include "esp_system.h"
 #include "board.h"
+#include "bootrec.h"
 #include "fpga.h"
 #include "hulk.h"
 #include "status_led.h"
@@ -25,6 +27,13 @@ extern const uint8_t bitstream_start[] asm("_binary_thehulk_bin_start");
 extern const uint8_t bitstream_end[]   asm("_binary_thehulk_bin_end");
 extern const uint8_t rom_start[]       asm("_binary_rom_img_start");
 extern const uint8_t rom_end[]         asm("_binary_rom_img_end");
+
+static bootrec_t s_rec;
+
+static uint32_t now_ms(void)
+{
+    return esp_timer_get_time() / 1000;
+}
 
 static size_t rom_len(void)
 {
@@ -60,6 +69,10 @@ static int verify_rom(const uint8_t *rom, size_t len)
 // Wait for the Atari, configure the FPGA and enable the cartridge
 static void start_cartridge(void)
 {
+    memset(&s_rec, 0, sizeof(s_rec));
+    s_rec.reset_reason = esp_reset_reason();
+    s_rec.brownouts = bootrec_brownouts();
+    s_rec.waited = !fpga_power_present();
     if (!fpga_power_present()) {
         status_led_set(STATUS_WAIT_POWER);
         ESP_LOGI(TAG, "waiting for Atari power");
@@ -68,14 +81,22 @@ static void start_cartridge(void)
         vTaskDelay(pdMS_TO_TICKS(10));         // let the 1.2 V / 3.3 V regulators settle
     }
     status_led_set(STATUS_STARTING);
+    s_rec.t_power = now_ms();
 
     for (;;) {
         if (fpga_configure(bitstream_start, bitstream_end - bitstream_start) == ESP_OK) {
+            s_rec.t_configured = now_ms();
             int version = hulk_probe();
             if (version >= 0) {
                 hulk_set_ctrl(0);
                 hulk_write(0, rom_start, rom_len());
                 hulk_set_ctrl(HULK_CTRL_ROM_EN);
+                s_rec.t_enabled = now_ms();
+                hulk_status_t st;
+                if (hulk_get_status(&st) == ESP_OK) {
+                    s_rec.addr_changes = st.addr_changes;
+                    s_rec.early = st.early_count;
+                }
                 ESP_LOGI(TAG, "cartridge enabled (gateware v%d, image %u bytes)",
                          version, (unsigned)rom_len());
                 status_led_set(STATUS_ACTIVE);
@@ -96,18 +117,34 @@ void app_main(void)
 {
     // The startup log level is WARN (each UART line costs ~5 ms on the boot path)
     esp_log_level_set("*", ESP_LOG_INFO);
+    bootrec_start();
 
     ESP_ERROR_CHECK(fpga_init());
     status_led_init();
+    if (!fpga_power_present())
+        bootrec_print();               // not on the boot path of a cold start
 
     for (;;) {
         start_cartridge();
 
-        // Verify once the Atari has had its chance to read the cartridge
-        vTaskDelay(pdMS_TO_TICKS(3000));
+        // Note the first cartridge reads, then verify once the Atari has had its
+        // chance to read the cartridge
+        while (now_ms() - s_rec.t_enabled < 3000) {
+            hulk_status_t st;
+            vTaskDelay(1);
+            if (hulk_get_status(&st) != ESP_OK)
+                continue;
+            if (!s_rec.t_rom4 && st.rom4_count)
+                s_rec.t_rom4 = now_ms();
+            if (!s_rec.t_rom3 && st.rom3_count)
+                s_rec.t_rom3 = now_ms();
+        }
         if (fpga_power_present() && fpga_done()) {
             fill_rom_rest(rom_len());
             int errors = verify_rom(rom_start, rom_len());
+            s_rec.verify_errors = errors > 255 ? 255 : errors;
+            bootrec_save(&s_rec);
+            bootrec_print();
             if (errors) {
                 ESP_LOGE(TAG, "cartridge verify: %d errors, reloading", errors);
                 status_led_set(STATUS_ERROR);
