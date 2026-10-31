@@ -24,6 +24,7 @@
 #include "fpga.h"
 #include "gemdrv.h"
 #include "hulk.h"
+#include "sd.h"
 #include "shadow.h"
 #include "status_led.h"
 
@@ -124,6 +125,7 @@ void app_main(void)
 
     ESP_ERROR_CHECK(fpga_init());
     status_led_init();
+    sd_start();
     if (!fpga_power_present())
         bootrec_print();               // not on the boot path of a cold start
 
