@@ -22,6 +22,25 @@ send_write_sync     macro
                     bsr send_sync_write_command_to_sidecart ; Send the command to the Multi-device
                     endm    
 
+; Send one 16-bit word to TheHulk as two reads of ROM3 on even addresses, high byte
+; first: 0xFB0000 + 2 * byte. A0 is never used, because the Falcon drives /UDS and
+; /LDS low on every read of the cartridge port, also for a byte at an odd address.
+; /1 : data register with the word (not d0)
+; d0.l high word must hold the ROM3 address high word ($00FB); d0.w and a1 are
+; scratch
+send_word           macro
+                    move.w \1, d0
+                    lsr.w #7, d0                            ; (word >> 8) * 2
+                    and.w #$1fe, d0
+                    move.l d0, a1
+                    move.b (a1), d0                         ; High byte
+                    move.w \1, d0
+                    add.w d0, d0                            ; (word & $ff) * 2
+                    and.w #$1fe, d0
+                    move.l d0, a1
+                    move.b (a1), d0                         ; Low byte
+                    endm
+
 ; Wait for second (aprox 50 VBlanks)
 wait_sec                macro
                         move.l d7, -(sp)                    ; Save the number counter reg

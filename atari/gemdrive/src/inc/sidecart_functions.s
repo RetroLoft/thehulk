@@ -119,81 +119,58 @@ _start_async_code_in_stack:
 
     ; SEND COMMAND CODE
     swap d0                     ; Recover the command code
-    move.l a0, a1               ; Address of the ROM3
-    add.w d0, a1                ; We can use add because the command code msb is 0 and there is no sign extension            
-    move.b (a1), d0             ; Command code. d0 is a scratch register
+    move.w d0, d7               ; d0 holds the ROM3 address from now on
+    move.l a0, d0               ; Address of the ROM3 in d0 (high word)
+    send_word d7                ; Command code
 
     ; SEND PAYLOAD SIZE
-    move.l a0, d0               ; Address of the ROM3 in d0    
-    move.w d1, d0                 ; OR high and low words in d0
-    move.l d0, a1               ; move to a1 ready to read from this address
-    move.b (a1), d0             ; Command payload size. d0 is a scratch register
+    send_word d1                ; Command payload size
     tst.w d1
     beq _no_more_payload_stack        ; If the command does not have payload, we are done.
 
     ; SEND PAYLOAD
-    move.w d2, d0
-    move.l d0, a1
-    move.b (a1), d0           ; Command payload low d2
+    send_word d2              ; Command payload low d2
     cmp.w #2, d1
     beq _no_more_payload_stack
 
     swap d2
-    move.w d2, d0
-    move.l d0, a1
-    move.b (a1), d0           ; Command payload high d2
+    send_word d2              ; Command payload high d2
     cmp.w #4, d1
     beq _no_more_payload_stack
 
-    move.w d3, d0
-    move.l d0, a1
-    move.b (a1), d0           ; Command payload low d3
+    send_word d3              ; Command payload low d3
     cmp.w #6, d1
     beq _no_more_payload_stack
 
     swap d3
-    move.w d3, d0
-    move.l d0, a1
-    move.b (a1), d0           ; Command payload high d3
+    send_word d3              ; Command payload high d3
     cmp.w #8, d1
     beq _no_more_payload_stack
 
-    move.w d4, d0
-    move.l d0, a1
-    move.b (a1), d0           ; Command payload low d4
+    send_word d4              ; Command payload low d4
     cmp.w #10, d1
     beq _no_more_payload_stack
 
     swap d4
-    move.w d4, d0
-    move.l d0, a1
-    move.b (a1), d0           ; Command payload high d4
+    send_word d4              ; Command payload high d4
     cmp.w #12, d1
-    beq.s _no_more_payload_stack
+    beq _no_more_payload_stack
 
-    move.w d5, d0
-    move.l d0, a1
-    move.b (a1), d0           ; Command payload low d5
+    send_word d5              ; Command payload low d5
     cmp.w #14, d1
-    beq.s _no_more_payload_stack
+    beq _no_more_payload_stack
 
     swap d5
-    move.w d5, d0
-    move.l d0, a1
-    move.b (a1), d0           ; Command payload high d5
+    send_word d5              ; Command payload high d5
     cmp.w #16, d1
-    beq.s _no_more_payload_stack
+    beq _no_more_payload_stack
 
-    move.w d6, d0
-    move.l d0, a1
-    move.b (a1), d0           ; Command payload low d6
+    send_word d6              ; Command payload low d6
     cmp.w #18, d1
-    beq.s _no_more_payload_stack
+    beq _no_more_payload_stack
 
     swap d6
-    move.w d6, d0
-    move.l d0, a1
-    move.b (a1), d0           ; Command payload high d6
+    send_word d6              ; Command payload high d6
 
 _no_more_payload_stack:
     swap d2                   ; D2 is the only register that is not used as a scratch register
@@ -286,52 +263,33 @@ _start_async_write_code_in_stack:
 
     ; SEND COMMAND CODE
     swap d0                     ; Recover the command code
-    move.l a0, a1               ; Address of the ROM3
-    add.w d0, a1                ; We can use add because the command code msb is 0 and there is no sign extension            
-    move.b (a1), d0             ; Command code. d0 is a scratch register
+    move.w d0, d7               ; d0 holds the ROM3 address from now on
+    move.l a0, d0               ; Address of the ROM3 in d0 (high word)
+    send_word d7                ; Command code
 
     ; SEND PAYLOAD SIZE
-    move.l a0, d0               ; Address of the ROM3 in d0    
-    move.w d1, d0               ; OR high and low words in d0
-    move.l d0, a1               ; move to a1 ready to read from this address
-    move.b (a1), d1             ; Command payload size. d1 is a scratch register
+    send_word d1                ; Command payload size
 
     ; SEND PAYLOAD
-    move.w d2, d0
-    move.l d0, a1
-    move.b (a1), d1           ; Command payload low d2
+    send_word d2              ; Command payload low d2
 
     swap d2
-    move.w d2, d0
-    move.l d0, a1
-    move.b (a1), d1           ; Command payload high d2
+    send_word d2              ; Command payload high d2
 
-    move.w d3, d0
-    move.l d0, a1
-    move.b (a1), d1           ; Command payload low d3
+    send_word d3              ; Command payload low d3
 
     swap d3
-    move.w d3, d0
-    move.l d0, a1
-    move.b (a1), d1           ; Command payload high d3
+    send_word d3              ; Command payload high d3
 
-    move.w d4, d0
-    move.l d0, a1
-    move.b (a1), d1           ; Command payload low d4
+    send_word d4              ; Command payload low d4
 
     swap d4
-    move.w d4, d0
-    move.l d0, a1
-    move.b (a1), d1           ; Command payload high d4
+    send_word d4              ; Command payload high d4
 
-    move.w d5, d0
-    move.l d0, a1
-    move.b (a1), d1           ; Command payload low d5
+    send_word d5              ; Command payload low d5
 
     swap d5
-    move.w d5, d0
-    move.l d0, a1
-    move.b (a1), d1           ; Command payload high d5
+    send_word d5              ; Command payload high d5
 
     ;
     ; SEND MEMORY BUFFER TO WRITE
@@ -351,14 +309,12 @@ _write_to_sidecart_odd_loop2:
     move.b  (a4)+, d3       ; Load the high byte
     lsl.w   #8, d3          ; Shift it to the high part of the word
     move.b  (a4)+, d3       ; Load the low byte
-    move.w d3, d0
-    move.l d0, a1
-    move.b (a1), d1           ; Write the memory to the sidecart
+    send_word d3              ; Write the memory to the sidecart
 
     add.w d3, d7             ; Add the word to the checksum
 
     dbf d6, _write_to_sidecart_odd_loop2
-    bra.s _write_to_sidecart_end_loop
+    bra _write_to_sidecart_end_loop
 
  _write_to_sidecart_even_loop:
     move.l a0, d0
@@ -371,32 +327,27 @@ _write_to_sidecart_odd_loop2:
     subq.l #1, d1                        ; We need to copy one byte less because dbf counts 0
 
  _write_to_sidecart_even_loop_unroll_by4:        ; 4x unrolled loop
-    move.w (a4)+, d0          ; Load the word
-    add.w d0, d7             ; Add the word to the checksum
-    move.l d0, a1
-    move.b (a1), d0           ; Write the memory to the sidecart
+    move.w (a4)+, d3          ; Load the word
+    add.w d3, d7              ; Add the word to the checksum
+    send_word d3              ; Write the memory to the sidecart
 
-    move.w (a4)+, d0          ; Load the word
-    add.w d0, d7             ; Add the word to the checksum
-    move.l d0, a1
-    move.b (a1), d0           ; Write the memory to the sidecart
+    move.w (a4)+, d3          ; Load the word
+    add.w d3, d7              ; Add the word to the checksum
+    send_word d3              ; Write the memory to the sidecart
 
-    move.w (a4)+, d0          ; Load the word
-    add.w d0, d7             ; Add the word to the checksum
-    move.l d0, a1
-    move.b (a1), d0           ; Write the memory to the sidecart
+    move.w (a4)+, d3          ; Load the word
+    add.w d3, d7              ; Add the word to the checksum
+    send_word d3              ; Write the memory to the sidecart
 
-    move.w (a4)+, d0          ; Load the word
-    add.w d0, d7             ; Add the word to the checksum    
-    move.l d0, a1
-    move.b (a1), d0           ; Write the memory to the sidecart
+    move.w (a4)+, d3          ; Load the word
+    add.w d3, d7              ; Add the word to the checksum
+    send_word d3              ; Write the memory to the sidecart
     dbf d1,_write_to_sidecart_even_loop_unroll_by4
     
  _write_to_sidecart_even_loop2:
-    move.w (a4)+, d0          ; Load the word
-    add.w d0, d7             ; Add the word to the checksum
-    move.l d0, a1
-    move.b (a1), d1           ; Write the memory to the sidecart
+    move.w (a4)+, d3          ; Load the word
+    add.w d3, d7              ; Add the word to the checksum
+    send_word d3              ; Write the memory to the sidecart
     dbf d6, _write_to_sidecart_even_loop2
 
 _write_to_sidecart_end_loop:

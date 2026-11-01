@@ -130,11 +130,13 @@ static int bus_read(const std::vector<uint8_t> &img, uint32_t byte_addr, uint16_
     return first_ok;
 }
 
-// --- Command channel: the Atari sends words as byte reads of 0xFB0000 + word ---
-static void atari_word(uint16_t w)
+// --- Command channel: the Atari sends data as byte reads of 0xFB0000 + offset ---
+static bool falcon = false;              // the Falcon drives /UDS low on every read
+
+static void atari_read(uint16_t offset)
 {
-    top.p_a.set<uint16_t>(w >> 1);
-    top.p_uds__n.set<bool>(w & 1);       // odd byte: /LDS, /UDS stays high
+    top.p_a.set<uint16_t>(offset >> 1);
+    top.p_uds__n.set<bool>(falcon ? false : (offset & 1));   // ST: odd byte = /LDS only
     advance(30 + rand() % 20);
     top.p_rom3__n.set<bool>(false);
     advance(250);
@@ -149,13 +151,20 @@ static void atari_poll(int n)
 {
     for (int i = 0; i < n; i++) {
         uint16_t w = rand();
-        atari_word(w == 0xabcd ? 0x1234 : w);
+        atari_read((w & 0xfffe) == 0xabcc ? 0x1234 : w);
     }
+}
+
+// A word as two reads on even addresses, high byte first
+static void atari_word(uint16_t w)
+{
+    atari_read((w >> 8) << 1);
+    atari_read((w & 0xff) << 1);
 }
 
 static void atari_packet(uint16_t cmd, const std::vector<uint16_t> &payload, uint16_t size)
 {
-    atari_word(0xabcd);
+    atari_read(0xabcd);
     atari_word(cmd);
     atari_word(size);
     for (uint16_t w : payload)
@@ -199,7 +208,7 @@ static int test_command_channel(void)
 {
     int errors = 0;
     status_t s = get_status();
-    unsigned count0 = s.count;
+    unsigned count0 = s.count, drops0 = s.drops;
     if (!top.p_irq__n.get<bool>() || s.ready) { printf("/IRQ low before any packet\n"); errors++; }
 
     // A packet with token and parameters, surrounded by polling reads
@@ -213,8 +222,8 @@ static int test_command_channel(void)
     // A second packet before the acknowledge is dropped
     atari_packet(0x0007, { 0x1111, 0x2222 }, 4);
     s = get_status();
-    if (!s.ready || s.count != count0 + 1 || s.drops != 1) {
-        printf("before ack: ready %u count %u drops %u\n", s.ready, s.count - count0, s.drops);
+    if (!s.ready || s.count != count0 + 1 || s.drops != drops0 + 1) {
+        printf("before ack: ready %u count %u drops %u\n", s.ready, s.count - count0, s.drops - drops0);
         errors++;
     }
     errors += check_packet("p1 kept", 0x0105, 12, p1);
@@ -253,7 +262,7 @@ static int test_command_channel(void)
         printf("end: count %u (expected 5), ready %u\n", s.count - count0, s.ready);
         errors++;
     }
-    printf("command channel: %u packets, %u dropped, errors: %d\n", s.count - count0, s.drops, errors);
+    printf("command channel: %u packets, %u dropped, errors: %d\n", s.count - count0, s.drops - drops0, errors);
     return errors;
 }
 
@@ -356,6 +365,9 @@ int main(int argc, char **argv)
     if (s.act < N) { printf("address activity counter too low\n"); errors++; }
     if (s.early != 1) { printf("expected 1 early ROM cycle (the disabled bus read)\n"); errors++; }
 
+    errors += test_command_channel();
+    falcon = true;
+    printf("again with /UDS low on every read (Falcon):\n");
     errors += test_command_channel();
 
     // The cartridge data must still be correct after the command traffic

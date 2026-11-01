@@ -53,7 +53,8 @@ static size_t rom_len(void)
 static void handle_packets(void)
 {
     static hulk_packet_t pkt;
-    while (!gpio_get_level(PIN_FPGA_IRQ)) {
+    // /IRQ reads low too while the FPGA side is unpowered
+    while (!gpio_get_level(PIN_FPGA_IRQ) && fpga_power_present() && fpga_done()) {
         if (hulk_get_packet(&pkt) != ESP_OK)
             return;
         hulk_ack_packet();
@@ -62,10 +63,30 @@ static void handle_packets(void)
     }
 }
 
+// Diagnostics: the first 256 ROM3 cycles the gateware saw ({A15..A1, /UDS})
+static bool s_capture_logged;
+
+static void log_capture(const hulk_status_t *st)
+{
+    static uint8_t b[512];
+    if (s_capture_logged || st->rom3_count < 256 || hulk_read(0x801000, b, sizeof(b)) != ESP_OK)
+        return;
+    s_capture_logged = true;
+    ESP_LOGI(TAG, "first ROM3 cycles (address bits 15..1 + /UDS as bit 0):");
+    for (int i = 0; i < 256; i += 16) {
+        char line[100];
+        size_t len = 0;
+        for (int k = 0; k < 16; k++)
+            len += snprintf(line + len, sizeof(line) - len, " %02x%02x", b[2 * (i + k)], b[2 * (i + k) + 1]);
+        ESP_LOGI(TAG, "%3d:%s", i, line);
+    }
+}
+
 // Wait for the Atari, configure the FPGA and enable the cartridge
 static void start_cartridge(void)
 {
     memset(&s_rec, 0, sizeof(s_rec));
+    s_capture_logged = false;
     shadow_init();
     shadow_load_image(rom_start, rom_len());
     gemdrv_init();
@@ -143,6 +164,7 @@ void app_main(void)
                 continue;
             if (!s_rec.t_rom3 && st.rom3_count)
                 s_rec.t_rom3 = now_ms();
+            log_capture(&st);
             handle_packets();
             if (!s_rec.t_rom4 && st.rom4_count)
                 s_rec.t_rom4 = now_ms();
@@ -170,6 +192,7 @@ void app_main(void)
             handle_packets();
             if (hulk_get_status(&st) != ESP_OK)
                 continue;
+            log_capture(&st);
             int64_t now = esp_timer_get_time();
             if ((st.rom4_count != prev.rom4_count || st.rom3_count != prev.rom3_count) &&
                 now - last_log > 1000000) {

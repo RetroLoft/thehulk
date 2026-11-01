@@ -10,13 +10,15 @@
 //
 // ESP32 side: SPI slave (SCK, MOSI, MISO, CS), see spi_slave.v.
 //
-// Command channel (SidecarTridge protocol, as in SideTNFS tprotocol.c): the Atari
-// sends 16-bit words as byte reads of 0xFB0000 + word, so the word is {A15..A1, A0},
-// with A0 = /UDS high (odd byte, /LDS). A packet is 0xABCD, command, payload size in
-// bytes, then the payload words. The decoder restarts when a packet is not complete
-// 10 ms after its header (the Atari polls the ROM3 area while it waits for the
-// answer, about a million reads per second). A complete packet is kept in EBR, /IRQ
-// goes low and further packets are dropped until the ESP32 acknowledges it.
+// Command channel (the SidecarTridge protocol of SideTNFS tprotocol.c, with bytes on
+// even addresses): the Atari sends data as reads of 0xFB0000 + 2 * byte. A0 is not
+// used, because the Falcon drives /UDS and /LDS low on every read, also for a byte
+// at an odd address. A packet is the header 0xABCD (or 0xABCC), then the command,
+// the payload size in bytes and the payload words, each word as two reads (high
+// byte first). The decoder restarts when a packet is not complete 10 ms after its
+// header (the Atari polls the ROM3 area while it waits for the answer, about a
+// million reads per second). A complete packet is kept in EBR, /IRQ goes low and
+// further packets are dropped until the ESP32 acknowledges it.
 //
 // Pins: see thehulk.pcf. A14 and A15 are on the RGB0/RGB1 pads (inputs, no internal
 // pull-up), /IRQ on RGB2 (open drain, pull-up on the board).
@@ -175,7 +177,7 @@ module top (
     reg       rd_pending = 1'b0;
     reg       rd_pending_pkt;
     reg       bus_valid;
-    reg [15:0] pkt_rdata;
+    reg [15:0] pkt_rdata;   // packet buffer or capture, see below
 
     always @(posedge clk) begin
         bus_blk    <= {~rom3_s[0], a_q[14]};   // /ROM3 low -> upper 64 KB
@@ -203,30 +205,66 @@ module top (
     reg [18:0] p_timer = 0;
     reg [10:0] p_widx;
     reg [15:0] p_left;             // payload bytes still to come (odd sizes: rounded up)
+    reg        p_low;              // the next read is the low byte of a word
+    reg [7:0]  p_high;             // the high byte that came first
+    reg        p_high_zero;
     reg        p_we;
     reg [10:0] p_waddr;
     reg [15:0] p_wdata;
 
     // The address is stable for several clocks before rom3_start, so the comparisons
     // are registered a clock ahead (timing)
-    wire [15:0] rom3_word = {a_q, uds_q};
+    wire [15:0] rom3_word = {a_q, uds_q};      // A0 from /UDS: ST only (capture)
+    wire [7:0]  rom3_byte = a_q[7:0];          // A8..A1
+    wire [15:0] p_word    = {p_high, rom3_byte};
     reg         hdr_match;
-    reg         word_zero;
+    reg         byte_zero;
     reg         p_expired;
     reg         p_left_le2;        // the next payload word is the last one
     reg         p_done;            // the packet is complete
-    wire        p_restart = p_state != P_HEADER && p_expired;
+
+    // The decoder acts one clock after rom3_start, on flags registered from its state
+    // (timing). ROM3 cycles are many clocks apart and the address stays valid.
+    reg         p_ev = 1'b0;       // a ROM3 cycle to decode
+    reg         st_header;         // waiting for a header (or the packet timed out)
+    reg         st_low, st_cmd, st_size;
+
+    // Diagnostics: the first 256 ROM3 cycles after the cartridge was enabled, as the
+    // decoder sees them ({A15..A1, /UDS}). Read at packet buffer word 0x800.
+    reg [15:0] cap_mem [0:255];
+    reg [8:0]  cap_n = 0;
+    reg [15:0] pkt_q, cap_q;
+    reg        rd_cap;
+
+    always @(posedge clk) begin
+        if (!rom_enable)
+            cap_n <= 0;
+        else if (rom3_start && !cap_n[8]) begin
+            cap_mem[cap_n[7:0]] <= rom3_word;
+            cap_n <= cap_n + 1'b1;
+        end
+        cap_q  <= cap_mem[rd_addr[7:0]];
+        rd_cap <= rd_addr[11];
+    end
 
     always @(posedge clk) begin
         if (p_we)
             pkt_mem[p_waddr] <= p_wdata;
-        pkt_rdata <= pkt_mem[rd_addr[10:0]];
+        pkt_q <= pkt_mem[rd_addr[10:0]];
     end
+
+    always @*
+        pkt_rdata = rd_cap ? cap_q : pkt_q;
 
     always @(posedge clk) begin
         p_we      <= 1'b0;
-        hdr_match <= rom3_word == PROTOCOL_HEADER;
-        word_zero <= rom3_word == 16'd0;
+        p_ev      <= rom3_start;
+        st_header <= p_state == P_HEADER || p_expired;
+        st_low    <= p_low;
+        st_cmd    <= p_state == P_CMD;
+        st_size   <= p_state == P_SIZE;
+        hdr_match <= a_q == PROTOCOL_HEADER[15:1];  // A0 ignored
+        byte_zero <= rom3_byte == 8'd0;
         p_expired <= p_timer == 0;
         p_left_le2 <= p_left <= 16'd2;
         if (p_timer != 0)
@@ -234,8 +272,8 @@ module top (
         if (pkt_ack)
             pkt_ready <= 1'b0;
 
-        if (rom3_start) begin
-            if (p_state == P_HEADER || p_restart) begin
+        if (p_ev) begin
+            if (st_header) begin
                 p_state <= P_HEADER;
                 if (hdr_match) begin
                     if (pkt_ready) begin
@@ -244,36 +282,38 @@ module top (
                     end else begin
                         p_state <= P_CMD;
                         p_timer <= RESTART_CLOCKS;
+                        p_low   <= 1'b0;
                     end
                 end
+            end else if (!st_low) begin
+                p_high      <= rom3_byte;
+                p_high_zero <= byte_zero;
+                p_low       <= 1'b1;
             end else begin
+                p_low   <= 1'b0;
                 p_we    <= 1'b1;
-                p_wdata <= rom3_word;
-                case (p_state)
-                    P_CMD: begin
-                        p_waddr <= 11'd0;
-                        p_state <= P_SIZE;
-                    end
-                    P_SIZE: begin
-                        p_waddr <= 11'd1;
-                        p_widx  <= 11'd2;
-                        p_left  <= rom3_word;
-                        p_done  <= word_zero;
-                        p_state <= P_DATA;
-                    end
-                    default: begin       // P_DATA
-                        p_waddr <= p_widx;
-                        if (p_widx != 11'd2047)
-                            p_widx <= p_widx + 1'b1;
-                        p_left  <= p_left - 16'd2;
-                        p_done  <= p_left_le2;
-                    end
-                endcase
+                p_wdata <= p_word;
+                if (st_cmd) begin
+                    p_waddr <= 11'd0;
+                    p_state <= P_SIZE;
+                end else if (st_size) begin
+                    p_waddr <= 11'd1;
+                    p_widx  <= 11'd2;
+                    p_left  <= p_word;
+                    p_done  <= p_high_zero & byte_zero;
+                    p_state <= P_DATA;
+                end else begin           // P_DATA
+                    p_waddr <= p_widx;
+                    if (p_widx != 11'd2047)
+                        p_widx <= p_widx + 1'b1;
+                    p_left  <= p_left - 16'd2;
+                    p_done  <= p_left_le2;
+                end
             end
         end
 
         // Packet complete: no payload, or the last payload word just arrived
-        if (p_state == P_DATA && p_done && !rom3_start) begin
+        if (p_state == P_DATA && p_done && !p_ev && !rom3_start) begin
             p_state   <= P_HEADER;
             pkt_ready <= 1'b1;
             pkt_count <= pkt_count + 1'b1;
