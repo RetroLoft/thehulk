@@ -64,7 +64,7 @@ PRG_STRUCT_SIZE         equ 28         ; Size of the GEMDOS structure in the exe
                                        ; 4 bytes: g_hflags
                                        ; 2 bytes: g_absflg
 PRG_MAGIC_NUMBER        equ $601A      ; Magic number of the PRG file
-STACK_SIZE_HACK_PEXEC   equ 52         ; TheHulk: offset of the caller's stack pointer on the hook stack (the Pexec() hack for TOS <= 1.06 uses it)
+STACK_SIZE_HACK_PEXEC   equ 56         ; TheHulk: offset of the caller's stack pointer on the hook stack (the Pexec() hack for TOS <= 1.06 uses it)
                                        ; The size is the same as the size of the movem.l in the save_regs/restore_regs macros plus 4
 
 ; Fase 1 (multi-drive, 68k-side only): the Pico must publish a drive table
@@ -265,6 +265,7 @@ GEMDOS_EINTRN           equ -65 ; GEMDOS Internal error
 ; Don't forget to update STACK_SIZE_HACK_PEXEC if you change the number of registers
 restore_regs        macro
                     movem.l (sp)+, d1-d7/a2-a6
+                    move.l (sp)+, a0
                     move.l (sp)+, a1
                     move.l (sp), sp                      ; Back to the stack of the caller
                     endm
@@ -275,7 +276,8 @@ restore_regs        macro
 ; 132 bytes above its variables at $8F9E (see $E1F38C): our registers, commands and
 ; nested GEMDOS call ran into them, which gave a low resolution or two bombs.
 save_regs           macro
-                    move.l a1, d0                        ; d0 is free: GEMDOS returns its result in it
+                    move.l a1, -(sp)                     ; Briefly on the stack of the caller, a1 is needed
+                    move.l d0, -(sp)                     ; a0 of the caller, see exec_trapped_handler
                     move.l (GEMDRVEMUL_SHARED_VARIABLES + (SHARED_VARIABLE_HOOK_STACK * 4)), a1
                     cmp.w #0, a1
                     beq.s .\@save_regs_same_stack
@@ -291,9 +293,10 @@ save_regs           macro
 .\@save_regs_same_stack:
                     move.l sp, a1
 .\@save_regs_push:
-                    move.l a1, -(sp)                     ; The stack of the caller
-                    move.l d0, -(sp)                     ; a1 of the caller
-                    movem.l d1-d7/a2-a6,-(sp)
+                    pea 8(a1)                            ; The stack of the caller
+                    move.l 4(a1), -(sp)                  ; a1 of the caller
+                    move.l (a1), -(sp)                   ; a0 of the caller: TOS keeps a0 and a1 over a GEMDOS
+                    movem.l d1-d7/a2-a6,-(sp)            ; call, and sloppy programs count on that
                     endm
 
 ; Restore the registries, restore the CPU speed + cache if needed and return from the exception
@@ -1296,6 +1299,7 @@ gemdrive_trap:
 ; But first, check user or supervisor mode and the CPU type
 ;
 exec_trapped_handler:
+    move.l a0, d0                         ; TheHulk: a0 of the caller for save_regs. d0 is free, GEMDOS returns its result in it
     btst #5, (sp)                         ; Check if called from user mode
     beq.s _user_mode                      ; if so, do correct stack pointer
 _not_user_mode:
@@ -1665,7 +1669,8 @@ _notlong:
     and.l #$FFFF, d4                     ; Mask the upper word of the handle
 
 
-    detect_emulated_drive_letter         ; If not, exec_old_handler the code. Otherwise continue with the code
+    cmp.l (GEMDRVEMUL_SHARED_VARIABLES + (SHARED_VARIABLE_FIRST_FILE_DESCRIPTOR * 4)), d4 ; TheHulk: it is about a handle, a4 is no path
+    blt .exec_old_handler
 
     move.l a4, -(sp)
     ; This is an emulated drive, it's our moment!

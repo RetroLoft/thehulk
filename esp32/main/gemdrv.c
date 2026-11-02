@@ -10,6 +10,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "gemdrv.h"
+#include "gemdrv_fs.h"
 #include "gemdrv_layout.h"
 #include "shadow.h"
 
@@ -22,10 +23,6 @@ static const char *TAG = "gemdrv";
 #define SYNC_TIMEOUT_68030  0x00500000
 
 static uint32_t random_token;
-
-// DTAs that Fsfirst was called with: Fsnext only comes to us for these
-#define MAX_DTAS 32
-static uint32_t s_dtas[MAX_DTAS];
 
 static uintptr_t shared(void)
 {
@@ -73,40 +70,6 @@ static void write_string(uint32_t offset, const char *s, size_t size)
         if (*s)
             s++;
     }
-}
-
-static bool dta_known(uint32_t dta, bool remove)
-{
-    for (int i = 0; i < MAX_DTAS; i++) {
-        if (s_dtas[i] == dta && dta) {
-            if (remove)
-                s_dtas[i] = 0;
-            return true;
-        }
-    }
-    return false;
-}
-
-static void dta_add(uint32_t dta)
-{
-    if (dta_known(dta, false))
-        return;
-    for (int i = 0; i < MAX_DTAS; i++) {
-        if (!s_dtas[i]) {
-            s_dtas[i] = dta;
-            return;
-        }
-    }
-    memmove(s_dtas, s_dtas + 1, sizeof(s_dtas) - sizeof(s_dtas[0]));   // full: drop the oldest
-    s_dtas[MAX_DTAS - 1] = dta;
-}
-
-// The root of the drive: "\", "C:", "C:\" or empty
-static bool is_root(const char *path)
-{
-    if (isalpha((unsigned char)path[0]) && path[1] == ':')
-        path += 2;
-    return !path[0] || (path[0] == '\\' && !path[1]);
 }
 
 // GEMDRIVE sends the TOS crash area $380-$3FF at every start (after the d3-d5 header):
@@ -260,6 +223,14 @@ static void debug_command(const hulk_packet_t *pkt)
         tos_block(addr, pkt->words + 2 + 6, bytes);
 }
 
+// Bytes in the Atari's order (byte 0 at the even address) into the shadow's CPU word order
+static void write_bytes(uint32_t offset, const uint8_t *data, size_t len)
+{
+    uint8_t *mem = (uint8_t *)shared() + offset;
+    for (size_t i = 0; i < len; i++)
+        mem[i ^ 1] = data[i];
+}
+
 void gemdrv_init(void)
 {
     uintptr_t m = shared();
@@ -306,7 +277,7 @@ void gemdrv_init(void)
     set_shared_var(SHARED_VARIABLE_SYNC_TIMEOUT, SYNC_TIMEOUT_68000);
 
     write_string(GEMDRVEMUL_DEFAULT_PATH, "", 128);
-    memset(s_dtas, 0, sizeof(s_dtas));
+    fs_reset();
 
     *((volatile uint32_t *)(m + GEMDRVEMUL_RANDOM_TOKEN_SEED)) = esp_random();
 }
@@ -373,6 +344,7 @@ void gemdrv_command(const hulk_packet_t *pkt)
         if (index == SHARED_VARIABLE_SVERSION) {
             set_shared_var(SHARED_VARIABLE_CODE_BUFFER, 0);
             set_shared_var(SHARED_VARIABLE_HOOK_STACK, 0);
+            fs_reset();
         }
         // TOS 3 and 4: a TT or Falcon with a 68030
         if (index == SHARED_VARIABLE_SVERSION && (value >> 16) >= 0x0300)
@@ -389,39 +361,87 @@ void gemdrv_command(const hulk_packet_t *pkt)
         ESP_LOGW(TAG, "floppy command 0x%04x while the floppy emulation is off", pkt->cmd);
         break;
 
-    // --- Drive C: is empty and read-only for now -----------------------------------
+    // --- The drive: folder HD of the microSD card, read-only (gemdrv_fs.c) -----------
     case GEMDRVEMUL_FSFIRST_CALL: {
         char path[192];
+        uint8_t dta_out[FS_DTA_SIZE];
         uint32_t dta = ((uint32_t)payloadPtr[1] << 16) | payloadPtr[0];
         payload_string(pkt, path, sizeof(path));
-        dta_add(dta);
-        memset((void *)(m + GEMDRVEMUL_DTA_TRANSFER), 0, DTA_SIZE_ON_ST);
-        WRITE_WORD(m, GEMDRVEMUL_DTA_F_FOUND, (uint16_t)GEMDOS_EFILNF);
-        ESP_LOGI(TAG, "Fsfirst \"%s\" (DTA %06lx): no files", path, (unsigned long)dta);
+        int16_t r = fs_fsfirst(dta, path, payloadPtr[2], dta_out);
+        write_bytes(GEMDRVEMUL_DTA_TRANSFER, dta_out, FS_DTA_SIZE);
+        WRITE_WORD(m, GEMDRVEMUL_DTA_F_FOUND, (uint16_t)r);
+        ESP_LOGI(TAG, "Fsfirst \"%s\" (DTA %06lx): %d", path, (unsigned long)dta, r);
         break;
     }
-    case GEMDRVEMUL_FSNEXT_CALL:
-        memset((void *)(m + GEMDRVEMUL_DTA_TRANSFER), 0, DTA_SIZE_ON_ST);
-        WRITE_WORD(m, GEMDRVEMUL_DTA_F_FOUND, (uint16_t)GEMDOS_ENMFIL);
+    case GEMDRVEMUL_FSNEXT_CALL: {
+        uint8_t dta_out[FS_DTA_SIZE];
+        uint32_t dta = ((uint32_t)payloadPtr[1] << 16) | payloadPtr[0];
+        int16_t r = fs_fsnext(dta, dta_out);
+        write_bytes(GEMDRVEMUL_DTA_TRANSFER, dta_out, FS_DTA_SIZE);
+        WRITE_WORD(m, GEMDRVEMUL_DTA_F_FOUND, (uint16_t)r);
         break;
+    }
     case GEMDRVEMUL_DTA_EXIST_CALL: {
         uint32_t dta = ((uint32_t)payloadPtr[1] << 16) | payloadPtr[0];
-        WRITE_AND_SWAP_LONGWORD(m, GEMDRVEMUL_DTA_EXIST, dta_known(dta, false) ? dta : 0);
+        WRITE_AND_SWAP_LONGWORD(m, GEMDRVEMUL_DTA_EXIST, fs_dta_exists(dta) ? dta : 0);
         break;
     }
     case GEMDRVEMUL_DTA_RELEASE_CALL: {
         uint32_t dta = ((uint32_t)payloadPtr[1] << 16) | payloadPtr[0];
-        WRITE_AND_SWAP_LONGWORD(m, GEMDRVEMUL_DTA_RELEASE, dta_known(dta, true) ? 1 : 0);
+        WRITE_AND_SWAP_LONGWORD(m, GEMDRVEMUL_DTA_RELEASE, fs_dta_release(dta) ? 1 : 0);
         break;
     }
 
     case GEMDRVEMUL_FOPEN_CALL: {
         char path[256];
         payload_string(pkt, path, sizeof(path));
-        WRITE_AND_SWAP_LONGWORD(m, GEMDRVEMUL_FOPEN_HANDLE, (uint32_t)GEMDOS_EFILNF);
-        ESP_LOGI(TAG, "Fopen \"%s\": not found", path);
+        int32_t r = fs_fopen(path, payloadPtr[0]);
+        WRITE_AND_SWAP_LONGWORD(m, GEMDRVEMUL_FOPEN_HANDLE, (uint32_t)r);
+        ESP_LOGI(TAG, "Fopen \"%s\": %ld", path, (long)r);
         break;
     }
+    case GEMDRVEMUL_READ_BUFF_CALL: {
+        // Handle in d3, the bytes still to read in d5; one buffer per command
+        static uint8_t buf[GEMDRVEMUL_READ_BUFF_SIZE];
+        uint32_t pending = ((uint32_t)payloadPtr[5] << 16) | payloadPtr[4];
+        int32_t n = fs_fread(payloadPtr[0], buf, pending > sizeof(buf) ? sizeof(buf) : pending);
+        if (n > 0)
+            write_bytes(GEMDRVEMUL_READ_BUFF, buf, n);
+        WRITE_AND_SWAP_LONGWORD(m, GEMDRVEMUL_READ_BYTES, (uint32_t)n);
+        break;
+    }
+    case GEMDRVEMUL_FCLOSE_CALL:
+        WRITE_WORD(m, GEMDRVEMUL_FCLOSE_STATUS, (uint16_t)fs_fclose(payloadPtr[0]));
+        break;
+    case GEMDRVEMUL_FSEEK_CALL: {
+        int32_t offset = (int32_t)(((uint32_t)payloadPtr[3] << 16) | payloadPtr[2]);
+        int32_t r = fs_fseek(payloadPtr[0], offset, payloadPtr[4]);
+        WRITE_AND_SWAP_LONGWORD(m, GEMDRVEMUL_FSEEK_STATUS, (uint32_t)r);
+        break;
+    }
+    case GEMDRVEMUL_FDATETIME_CALL: {
+        // Flag in d3 (non-zero: set the date, not on a read-only drive), handle in d4
+        uint16_t time = 0, date = 0;
+        int32_t r = payloadPtr[0] ? GEMDOS_EACCDN : fs_fdatime(payloadPtr[2], &time, &date);
+        WRITE_AND_SWAP_LONGWORD(m, GEMDRVEMUL_FDATETIME_TIME, time);
+        WRITE_AND_SWAP_LONGWORD(m, GEMDRVEMUL_FDATETIME_DATE, date);
+        WRITE_AND_SWAP_LONGWORD(m, GEMDRVEMUL_FDATETIME_STATUS, (uint32_t)r);
+        break;
+    }
+    case GEMDRVEMUL_FATTRIB_CALL: {
+        char path[128];
+        payload_string(pkt, path, sizeof(path));
+        int32_t r = fs_fattrib(path, payloadPtr[0], payloadPtr[2]);
+        WRITE_AND_SWAP_LONGWORD(m, GEMDRVEMUL_FATTRIB_STATUS, (uint32_t)r);
+        break;
+    }
+    case GEMDRVEMUL_SAVE_BASEPAGE:
+        memcpy((void *)(m + GEMDRVEMUL_EXEC_PD), payloadPtr + 6, 256);
+        break;
+    case GEMDRVEMUL_SAVE_EXEC_HEADER:
+        memcpy((void *)(m + GEMDRVEMUL_EXEC_HEADER), payloadPtr + 6, 28);
+        break;
+
     case GEMDRVEMUL_PEXEC_CALL: {
         uint16_t mode = payloadPtr[0];
         uint32_t stack = ((uint32_t)payloadPtr[3] << 16) | payloadPtr[2];
@@ -438,63 +458,47 @@ void gemdrv_command(const hulk_packet_t *pkt)
     }
 
     case GEMDRVEMUL_DGETPATH_CALL:
-        write_string(GEMDRVEMUL_DEFAULT_PATH, "", 128);
+        write_string(GEMDRVEMUL_DEFAULT_PATH, fs_dgetpath(), 128);
         break;
     case GEMDRVEMUL_DSETPATH_CALL: {
         char path[256];
         payload_string(pkt, path, sizeof(path));
-        bool ok = is_root(path);
-        WRITE_WORD(m, GEMDRVEMUL_SET_DPATH_STATUS, (uint16_t)(ok ? GEMDOS_EOK : GEMDOS_EPTHNF));
-        ESP_LOGI(TAG, "Dsetpath \"%s\": %s", path, ok ? "ok" : "path not found");
+        int16_t r = fs_dsetpath(path);
+        WRITE_WORD(m, GEMDRVEMUL_SET_DPATH_STATUS, (uint16_t)r);
+        ESP_LOGI(TAG, "Dsetpath \"%s\": %d", path, r);
         break;
     }
     case GEMDRVEMUL_DFREE_CALL:
-        // An empty, full drive: free clusters, total clusters, bytes per sector,
-        // sectors per cluster
+        // Free clusters, total clusters, bytes per sector, sectors per cluster. Read-only,
+        // so nothing is free; counting the clusters of a big card would take too long.
         WRITE_AND_SWAP_LONGWORD(m, GEMDRVEMUL_DFREE_STRUCT, 0);
-        WRITE_AND_SWAP_LONGWORD(m, GEMDRVEMUL_DFREE_STRUCT + 4, 1);
+        WRITE_AND_SWAP_LONGWORD(m, GEMDRVEMUL_DFREE_STRUCT + 4, 65535);
         WRITE_AND_SWAP_LONGWORD(m, GEMDRVEMUL_DFREE_STRUCT + 8, 512);
         WRITE_AND_SWAP_LONGWORD(m, GEMDRVEMUL_DFREE_STRUCT + 12, 2);
         WRITE_AND_SWAP_LONGWORD(m, GEMDRVEMUL_DFREE_STATUS, 0);
         break;
 
+    // Everything that would change the card
     case GEMDRVEMUL_DCREATE_CALL:
         WRITE_WORD(m, GEMDRVEMUL_DCREATE_STATUS, (uint16_t)GEMDOS_EACCDN);
         break;
     case GEMDRVEMUL_DDELETE_CALL:
-        WRITE_WORD(m, GEMDRVEMUL_DDELETE_STATUS, (uint16_t)GEMDOS_EPTHNF);
+        WRITE_WORD(m, GEMDRVEMUL_DDELETE_STATUS, (uint16_t)GEMDOS_EACCDN);
         break;
     case GEMDRVEMUL_FCREATE_CALL:
         WRITE_WORD(m, GEMDRVEMUL_FCREATE_HANDLE, (uint16_t)GEMDOS_EACCDN);
         break;
     case GEMDRVEMUL_FDELETE_CALL:
-        WRITE_WORD(m, GEMDRVEMUL_FDELETE_STATUS, (uint16_t)GEMDOS_EFILNF);
+        WRITE_WORD(m, GEMDRVEMUL_FDELETE_STATUS, (uint16_t)GEMDOS_EACCDN);
         break;
     case GEMDRVEMUL_FRENAME_CALL:
-        WRITE_AND_SWAP_LONGWORD(m, GEMDRVEMUL_FRENAME_STATUS, (uint32_t)GEMDOS_EFILNF);
-        break;
-    case GEMDRVEMUL_FATTRIB_CALL:
-        WRITE_AND_SWAP_LONGWORD(m, GEMDRVEMUL_FATTRIB_STATUS, (uint32_t)GEMDOS_EFILNF);
-        break;
-
-    // No file is ever open: every handle is invalid
-    case GEMDRVEMUL_FCLOSE_CALL:
-        WRITE_WORD(m, GEMDRVEMUL_FCLOSE_STATUS, (uint16_t)GEMDOS_EIHNDL);
-        break;
-    case GEMDRVEMUL_FSEEK_CALL:
-        WRITE_AND_SWAP_LONGWORD(m, GEMDRVEMUL_FSEEK_STATUS, (uint32_t)GEMDOS_EIHNDL);
-        break;
-    case GEMDRVEMUL_FDATETIME_CALL:
-        WRITE_AND_SWAP_LONGWORD(m, GEMDRVEMUL_FDATETIME_STATUS, (uint32_t)GEMDOS_EIHNDL);
-        break;
-    case GEMDRVEMUL_READ_BUFF_CALL:
-        WRITE_AND_SWAP_LONGWORD(m, GEMDRVEMUL_READ_BYTES, (uint32_t)GEMDOS_EIHNDL);
+        WRITE_AND_SWAP_LONGWORD(m, GEMDRVEMUL_FRENAME_STATUS, (uint32_t)GEMDOS_EACCDN);
         break;
     case GEMDRVEMUL_WRITE_BUFF_CALL:
-        WRITE_AND_SWAP_LONGWORD(m, GEMDRVEMUL_WRITE_BYTES, (uint32_t)GEMDOS_EIHNDL);
+        WRITE_AND_SWAP_LONGWORD(m, GEMDRVEMUL_WRITE_BYTES, (uint32_t)GEMDOS_EACCDN);
         break;
     case GEMDRVEMUL_WRITE_BUFF_CHECK:
-        WRITE_AND_SWAP_LONGWORD(m, GEMDRVEMUL_WRITE_CONFIRM_STATUS, (uint32_t)GEMDOS_EIHNDL);
+        WRITE_AND_SWAP_LONGWORD(m, GEMDRVEMUL_WRITE_CONFIRM_STATUS, (uint32_t)GEMDOS_EACCDN);
         break;
 
     case GEMDRVEMUL_DEBUG:
@@ -506,8 +510,6 @@ void gemdrv_command(const hulk_packet_t *pkt)
     case GEMDRVEMUL_FSETDTA_CALL:
     case GEMDRVEMUL_DGETDRV_CALL:
     case GEMDRVEMUL_MALLOC_CALL:
-    case GEMDRVEMUL_SAVE_BASEPAGE:
-    case GEMDRVEMUL_SAVE_EXEC_HEADER:
         break;
 
     default:

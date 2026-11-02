@@ -27,6 +27,7 @@
 #define GEMDRVEMUL_FOPEN_HANDLE                     0x00100
 #define GEMDRVEMUL_READ_BYTES                       0x00104
 #define GEMDRVEMUL_READ_BUFF                        0x00108     // 16 KB
+#define GEMDRVEMUL_READ_BUFF_SIZE                   16384       // BUFFER_READ_SIZE in gemdrive.s
 #define GEMDRVEMUL_WRITE_BYTES                      0x04108
 #define GEMDRVEMUL_WRITE_CHK                        0x0410c
 #define GEMDRVEMUL_WRITE_CONFIRM_STATUS             0x04110
@@ -94,6 +95,8 @@
 #define GEMDOS_EPTHNF   -34     // path not found
 #define GEMDOS_EACCDN   -36     // access denied
 #define GEMDOS_EIHNDL   -37     // invalid handle
+#define GEMDOS_ENHNDL   -35     // no handles left
+#define GEMDOS_EINVFN   -32     // invalid function
 #define GEMDOS_ENMFIL   -49     // no more files
 
 #define FIRST_FILE_DESCRIPTOR                   16384

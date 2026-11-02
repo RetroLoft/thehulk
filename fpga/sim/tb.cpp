@@ -247,9 +247,9 @@ static int test_command_channel(void)
     errors += check_packet("long", 0x0004, 1024, p4);
     cmd_ack();
 
-    // An incomplete packet: the decoder restarts 10 ms after its header
+    // An incomplete packet: the decoder restarts 100 ms after its header
     atari_packet(0x0099, { 0x1234 }, 8);         // 3 of 4 payload words missing
-    advance(12e6);                               // 10 ms +-10 % (HFOSC tolerance)
+    advance(120e6);                              // 100 ms +-10 % (HFOSC tolerance)
     std::vector<uint16_t> p5 = { 0x4242, 0x4343 };
     atari_packet(0x0005, p5, 4);
     s = get_status();

@@ -15,7 +15,7 @@
 // used, because the Falcon drives /UDS and /LDS low on every read, also for a byte
 // at an odd address. A packet is the header 0xABCD (or 0xABCC), then the command,
 // the payload size in bytes and the payload words, each word as two reads (high
-// byte first). The decoder restarts when a packet is not complete 10 ms after its
+// byte first). The decoder restarts when a packet is not complete 100 ms after its
 // header (the Atari polls the ROM3 area while it waits for the answer, about a
 // million reads per second). A complete packet is kept in EBR, /IRQ goes low and
 // further packets are dropped until the ESP32 acknowledges it.
@@ -193,7 +193,7 @@ module top (
     // Command channel: protocol decoder and packet buffer (2048 words of EBR)
     // ------------------------------------------------------------------
     localparam [15:0] PROTOCOL_HEADER = 16'hABCD;
-    localparam [18:0] RESTART_CLOCKS  = 19'd480000;   // 10 ms at 48 MHz (9.1-11.1 ms)
+    localparam [15:0] RESTART_TICKS   = 16'd37500;    // 100 ms at 48 MHz (91-111 ms) in steps of 128 clocks: a packet of 2 KB takes ~40 ms on a 68000
 
     localparam P_HEADER = 2'd0;
     localparam P_CMD    = 2'd1;
@@ -202,7 +202,9 @@ module top (
 
     reg [15:0] pkt_mem [0:2047];
     reg [1:0]  p_state = P_HEADER;
-    reg [18:0] p_timer = 0;
+    reg [15:0] p_timer = 0;
+    reg [6:0]  p_prescale = 0;
+    reg        p_tick = 1'b0;
     reg [10:0] p_widx;
     reg [15:0] p_left;             // payload bytes still to come (odd sizes: rounded up)
     reg        p_low;              // the next read is the low byte of a word
@@ -274,7 +276,9 @@ module top (
         byte_zero <= rom3_byte == 8'd0;
         p_expired <= p_timer == 0;
         p_left_le2 <= p_left <= 16'd2;
-        if (p_timer != 0)
+        p_prescale <= p_prescale + 1'b1;
+        p_tick     <= p_prescale == 7'd0;
+        if (p_tick && p_timer != 0)
             p_timer <= p_timer - 1'b1;
         if (pkt_ack)
             pkt_ready <= 1'b0;
@@ -288,7 +292,7 @@ module top (
                             pkt_drops <= pkt_drops + 1'b1;
                     end else begin
                         p_state <= P_CMD;
-                        p_timer <= RESTART_CLOCKS;
+                        p_timer <= RESTART_TICKS;
                         p_low   <= 1'b0;
                     end
                 end
