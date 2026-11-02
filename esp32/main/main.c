@@ -30,6 +30,7 @@
 #include "settings.h"
 #include "shadow.h"
 #include "status_led.h"
+#include "wifi.h"
 
 static const char *TAG = "hulk";
 
@@ -108,6 +109,11 @@ static void irq_start(void)
 static void wait_for_packet(void)
 {
     ulTaskNotifyTake(pdTRUE, 1);
+#ifndef HULK_CART_READONLY
+    // GEMDRIVE and THEHULK.PRG read the network and clock state without a command
+    if (fpga_power_present() && fpga_done() && gemdrv_poll())
+        shadow_sync();
+#endif
 }
 
 static void handle_packets(void)
@@ -234,6 +240,7 @@ void app_main(void)
     log_start();
     bootrec_start();
     settings_init();
+    wifi_start();
 
     ESP_ERROR_CHECK(fpga_init());
     irq_start();

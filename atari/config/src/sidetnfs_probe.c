@@ -632,6 +632,15 @@ int sidetnfs_probe_get_rtc_sync_state(void)
  * ------------------------------------------------------------------ */
 #define NETWORK_LINK_STATUS_OFFSET 0x0018UL
 
+/* The local time from the cartridge in DOS format (date << 16 | time), which the
+ * firmware refreshes every second. Returns 0 until it has the time from NTP. */
+unsigned long sidetnfs_probe_get_time(void)
+{
+    if (sidetnfs_probe_get_rtc_sync_state() != SIDETNFS_RTC_SYNC_SYNCED)
+        return 0UL;
+    return rom3_read_long(0x0038UL);
+}
+
 int sidetnfs_probe_get_network_link_state(void)
 {
     if (rom3_read_long(NETWORK_LINK_STATUS_OFFSET) == GEMDRV_STATUS_READY)

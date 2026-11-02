@@ -3502,6 +3502,19 @@ static void demo_seed_clock(void)
  * user sees whether the boot-time clock hand-off worked. */
 static void status_refresh_clock_text(void)
 {
+#ifndef DEMO_MODE
+    /* TheHulk: when GEMDRIVE could not set the clock during the boot, because
+     * the network or NTP were not ready yet, it is done here, once. */
+    static int clock_done = 0;
+    if (!clock_done) {
+        unsigned long now = sidetnfs_probe_get_time();
+        if (now) {
+            Tsetdate((short)(now >> 16));
+            Tsettime((short)(now & 0xFFFFUL));
+            clock_done = 1;
+        }
+    }
+#endif
     gemdos_format_clock((unsigned short)Tgetdate(), (unsigned short)Tgettime(),
                         sw_clock_field_chars, sw_clock_now);
 }

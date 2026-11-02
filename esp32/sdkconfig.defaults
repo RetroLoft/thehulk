@@ -24,3 +24,10 @@ CONFIG_BOOTLOADER_SKIP_VALIDATE_ON_POWER_ON=y
 # raises the level to INFO in app_main().
 CONFIG_LOG_DEFAULT_LEVEL_WARN=y
 CONFIG_LOG_MAXIMUM_LEVEL_INFO=y
+
+# Wi-Fi on the second core: the first core answers the Atari
+CONFIG_ESP_WIFI_TASK_PINNED_TO_CORE_1=y
+CONFIG_LWIP_TCPIP_TASK_AFFINITY_CPU1=y
+
+# NTP: the request at once, not after a random delay of up to 5 s (wifi.c waits 5 s per try)
+CONFIG_LWIP_SNTP_STARTUP_DELAY=n

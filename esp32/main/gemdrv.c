@@ -13,6 +13,7 @@
 #include "gemdrv_fs.h"
 #include "gemdrv_layout.h"
 #include "settings.h"
+#include "wifi.h"
 #include "shadow.h"
 
 static const char *TAG = "gemdrv";
@@ -27,6 +28,7 @@ static uint32_t random_token;
 static uint16_t s_slot_drive[GEMDRIVE_MAX_RUNTIME_DRIVES];
 static int s_slot_count;
 static bool s_restart;
+static bool s_y2k_patch;
 
 static uintptr_t shared(void)
 {
@@ -262,15 +264,73 @@ static void write_field(uint32_t offset, const char *text, size_t len)
     write_bytes(offset, (const uint8_t *)field, len);
 }
 
+static uint8_t to_bcd(int v)
+{
+    return ((v / 10) << 4) | (v % 10);
+}
+
+// The clock for GEMDRIVE: the IKBD message to set the keyboard clock and the DOS date/time.
+// The bytes as rtcemul.c of SideTNFS writes them.
+static void write_datetime(const struct tm *t)
+{
+    uintptr_t m = shared();
+    volatile uint8_t *b = (volatile uint8_t *)(m + GEMDRVEMUL_RTC_DATETIME_BCD);
+    int year = t->tm_year + 1900;
+    b[1] = 0x1B;
+    b[0] = to_bcd((s_y2k_patch ? year - 30 : year) % 100);
+    b[3] = to_bcd(t->tm_mon + 1);
+    b[2] = to_bcd(t->tm_mday);
+    b[5] = to_bcd(t->tm_hour);
+    b[4] = to_bcd(t->tm_min);
+    b[7] = to_bcd(t->tm_sec);
+    b[6] = 0;
+    uint32_t date = ((year - 1980) << 9) | ((t->tm_mon + 1) << 5) | t->tm_mday;
+    uint32_t tod = (t->tm_hour << 11) | (t->tm_min << 5) | (t->tm_sec / 2);
+    WRITE_AND_SWAP_LONGWORD(m, GEMDRVEMUL_RTC_DATETIME_MSDOS, (date << 16) | tod);
+}
+
+static uint32_t status_word(wifi_state_t state)
+{
+    return state == WIFI_STATE_READY ? GEMDRV_STATUS_READY :
+           state == WIFI_STATE_FAILED ? GEMDRV_STATUS_FAILED : GEMDRV_STATUS_BUSY;
+}
+
+bool gemdrv_poll(void)
+{
+    uintptr_t m = shared();
+    volatile uint32_t *net = (volatile uint32_t *)(m + GEMDRVEMUL_NETWORK_STATUS);
+    volatile uint32_t *rtc = (volatile uint32_t *)(m + GEMDRVEMUL_RTC_STATUS);
+    bool changed = false;
+    uint32_t v = status_word(wifi_link_state());
+    if (*net != v) {
+        *net = v;
+        changed = true;
+    }
+    struct tm t;
+    static int s_last_sec = -1;
+    if (wifi_local_time(&t) && t.tm_sec != s_last_sec) {
+        s_last_sec = t.tm_sec;
+        write_datetime(&t);
+        changed = true;
+    }
+    v = status_word(wifi_time_state());     // after the time it announces
+    if (*rtc != v) {
+        *rtc = v;
+        changed = true;
+    }
+    return changed;
+}
+
 void gemdrv_init(void)
 {
     uintptr_t m = shared();
 
-    // No network and no clock yet: report them as failed, so the Atari does not
-    // wait for them
-    *((volatile uint32_t *)(m + GEMDRVEMUL_RTC_STATUS)) = 0;
-    *((volatile uint32_t *)(m + GEMDRVEMUL_NETWORK_STATUS)) = GEMDRV_STATUS_FAILED;
-    *((volatile uint32_t *)(m + GEMDRVEMUL_RTC_ENABLED)) = 0;
+    // The network and the clock, see gemdrv_poll
+    *((volatile uint32_t *)(m + GEMDRVEMUL_RTC_STATUS)) = GEMDRV_STATUS_BUSY;
+    *((volatile uint32_t *)(m + GEMDRVEMUL_NETWORK_STATUS)) = GEMDRV_STATUS_BUSY;
+    // The clock only when there is a network to get it from: GEMDRIVE waits for it
+    *((volatile uint32_t *)(m + GEMDRVEMUL_RTC_ENABLED)) =
+        settings_rtc()->enabled && settings_net()->ssid[0] ? 0xFFFFFFFF : 0;
     *((volatile uint16_t *)(m + GEMDRVEMUL_RTC_XBIOS_REENTRY_TRAP)) = 0;
     *((volatile uint32_t *)(m + GEMDRVEMUL_RTC_Y2K_PATCH)) = 0;
     *((volatile uint16_t *)(m + GEMDRVEMUL_PING_STATUS)) = 0;
@@ -392,6 +452,11 @@ void gemdrv_command(const hulk_packet_t *pkt)
             set_shared_var(SHARED_VARIABLE_CODE_BUFFER, 0);
             set_shared_var(SHARED_VARIABLE_HOOK_STACK, 0);
             fs_reset();
+            // The keyboard clock of TOS 1 cannot hold a year after 1999. GEMDRIVE then
+            // sets a year 30 back and corrects XBIOS Gettime. A low word with the high
+            // bit set is EmuTOS, which handles this itself; TOS 2 and up have no need.
+            s_y2k_patch = (value >> 16) < 0x0200 && !(value & 0x8000);
+            WRITE_AND_SWAP_LONGWORD(m, GEMDRVEMUL_RTC_Y2K_PATCH, s_y2k_patch ? 0xFFFFFFFF : 0);
         }
         // TOS 3 and 4: a TT or Falcon with a 68030
         if (index == SHARED_VARIABLE_SVERSION && (value >> 16) >= 0x0300)

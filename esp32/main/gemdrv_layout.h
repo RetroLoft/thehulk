@@ -17,6 +17,8 @@
 #define GEMDRVEMUL_REENTRY_TRAP                     0x00024
 #define GEMDRVEMUL_OLD_XBIOS_TRAP                   0x00028
 #define GEMDRVEMUL_RTC_XBIOS_REENTRY_TRAP           0x0002c
+#define GEMDRVEMUL_RTC_DATETIME_BCD                 0x00030
+#define GEMDRVEMUL_RTC_DATETIME_MSDOS               0x00038
 #define GEMDRVEMUL_RTC_Y2K_PATCH                    0x00040
 #define GEMDRVEMUL_DEFAULT_PATH                     0x00044     // 128 bytes
 #define GEMDRVEMUL_DTA_F_FOUND                      0x000c4

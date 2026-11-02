@@ -203,6 +203,7 @@ int sidetnfs_probe_check_update(SideTnfsUpdateCheck *info);
 #define SIDETNFS_RTC_SYNC_SYNCED     1 /* Pico published a synchronised clock */
 #define SIDETNFS_RTC_SYNC_NOT_SYNCED 2 /* enabled, but never synchronised */
 int sidetnfs_probe_get_rtc_sync_state(void);
+unsigned long sidetnfs_probe_get_time(void);
 
 /* Live WiFi link state, the network counterpart of the RTC sync state
  * above and read the same way -- no command is sent. CONNECTED means the
