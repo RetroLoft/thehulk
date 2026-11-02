@@ -114,8 +114,7 @@ _copy_sync_code:
     addq.w #4, d1                       ; Add 4 bytes to the payload size to include the token
 
 _start_async_code_in_stack:
-    ; TheHulk: no interrupts while the packet goes out. The gateware drops a packet that
-    ; is not complete 10 ms after its header, and the caller would wait for the timeout.
+    ; TheHulk: no interrupts while this short packet goes out.
     move.w sr, -(sp)
     or.w #$0700, sr
     move.l #ROM3_START_ADDR, a0 ; Start address of the ROM3
@@ -266,8 +265,8 @@ _copy_write_sync_code:
     lsl.w #1, d1                        ; Multiply by 2 because we are sending two bytes each iteration
 
 _start_async_write_code_in_stack:   
-    move.w sr, -(sp)            ; TheHulk: no interrupts while the packet goes out, see above
-    or.w #$0700, sr
+    ; TheHulk: interrupts stay on. A 2 KB block takes up to ~40 ms on a 68000, the IKBD
+    ; would lose bytes (phantom keys) and the 100 ms packet timer leaves room for them.
     move.l #ROM3_START_ADDR, a0 ; We have to keep in A0 the address of the ROM3 because we need to read from it
 
     ; SEND HEADER WITH MAGIC NUMBER
@@ -365,7 +364,6 @@ _write_to_sidecart_odd_loop2:
 
 _write_to_sidecart_end_loop:
     ; End of the command loop. Now we need to wait for the token
-    move.w (sp)+, sr
     swap d2                   ; D2 is the only register that is not used as a scratch register
     move.l (GEMDRVEMUL_SHARED_VARIABLES + (SHARED_VARIABLE_SYNC_TIMEOUT * 4)), d6 ; Polls of the token before the timeout, set by the ESP32
     moveq #0, d0              ; Timeout
