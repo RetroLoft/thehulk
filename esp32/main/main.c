@@ -27,6 +27,7 @@
 #include "gemdrv.h"
 #include "hulk.h"
 #include "sd.h"
+#include "settings.h"
 #include "shadow.h"
 #include "status_led.h"
 
@@ -125,6 +126,12 @@ static void handle_packets(void)
         if (!shadow_is_synced())
             ESP_LOGE(TAG, "command 0x%04x changed the shadow outside the synced areas", pkt.cmd);
 #endif
+#endif
+#ifndef HULK_CART_READONLY
+        if (gemdrv_restart_wanted()) {
+            vTaskDelay(pdMS_TO_TICKS(20));  // the log
+            esp_restart();
+        }
 #endif
         uint32_t us = esp_timer_get_time() - t0;
         if (us > s_slowest_us)
@@ -226,6 +233,7 @@ void app_main(void)
     esp_log_level_set("*", ESP_LOG_INFO);
     log_start();
     bootrec_start();
+    settings_init();
 
     ESP_ERROR_CHECK(fpga_init());
     irq_start();

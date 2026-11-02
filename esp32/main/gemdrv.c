@@ -12,19 +12,21 @@
 #include "gemdrv.h"
 #include "gemdrv_fs.h"
 #include "gemdrv_layout.h"
+#include "settings.h"
 #include "shadow.h"
 
 static const char *TAG = "gemdrv";
 
 #define ATARI_ROM4_START  0xFA0000
-#define DRIVE_LETTER_SD     'N'
-#define DRIVE_LETTER_FLASH  'S'
 
 // Token polls before a GEMDRIVE command times out (measured on the Falcon: 730000 polls/s)
 #define SYNC_TIMEOUT_68000  0x000FFFFF
 #define SYNC_TIMEOUT_68030  0x00500000
 
 static uint32_t random_token;
+static uint16_t s_slot_drive[GEMDRIVE_MAX_RUNTIME_DRIVES];
+static int s_slot_count;
+static bool s_restart;
 
 static uintptr_t shared(void)
 {
@@ -233,6 +235,33 @@ static void write_bytes(uint32_t offset, const uint8_t *data, size_t len)
         mem[i ^ 1] = data[i];
 }
 
+// Dfree and Dgetpath give the GEMDOS drive number, the others the slot
+static int slot_of_drive(uint16_t drive)
+{
+    for (int i = 0; i < s_slot_count; i++)
+        if (s_slot_drive[i] == drive)
+            return i;
+    return -1;
+}
+
+// A string field of a command: high byte first, always zero-terminated
+static void payload_field(const uint16_t *w, char *out, size_t len)
+{
+    for (size_t i = 0; i < len; i += 2) {
+        out[i] = w[i / 2] >> 8;
+        out[i + 1] = w[i / 2] & 0xFF;
+    }
+    out[len - 1] = 0;
+}
+
+static void write_field(uint32_t offset, const char *text, size_t len)
+{
+    char field[128];
+    memset(field, 0, sizeof(field));
+    strncpy(field, text, len - 1);
+    write_bytes(offset, (const uint8_t *)field, len);
+}
+
 void gemdrv_init(void)
 {
     uintptr_t m = shared();
@@ -255,20 +284,33 @@ void gemdrv_init(void)
 #endif
     WRITE_WORD(m, GEMDRVEMUL_FLOPPY_SESSION_INSTALL_FLOPPY, 0);
 
-    // The SD drive N: (C: is usually a hard disk, on the Falcon the internal IDE drive)
-    // and the flash drive S:. The letters become settings.
-    const uint32_t drive_number = DRIVE_LETTER_SD - 'A';
+    // The drives from the settings, then the flash drive with the configuration program.
+    // TNFS drives come later: not installed yet.
+    int slots = 0;
+    for (int i = 0; i < SETTINGS_MAX_DRIVES; i++) {
+        const settings_drive_t *d = settings_drive(i);
+        if (d->state != SETTINGS_DRIVE_ENABLED)
+            continue;
+        if (d->type != SETTINGS_TYPE_SD) {
+            ESP_LOGW(TAG, "drive %c: is TNFS, not available yet", d->letter);
+            continue;
+        }
+        fs_set_sd_slot(slots, d->sd_path);
+        s_slot_drive[slots++] = d->letter - 'A';
+    }
+    fs_set_flash_slot(slots);
+    s_slot_drive[slots++] = settings_flash_letter() - 'A';
+    s_slot_count = slots;
+    const uint32_t drive_number = s_slot_drive[0];
     set_shared_var(SHARED_VARIABLE_FIRST_FILE_DESCRIPTOR, FIRST_FILE_DESCRIPTOR);
     set_shared_var(SHARED_VARIABLE_DRIVE_LETTER, 'A' + drive_number);
     set_shared_var(SHARED_VARIABLE_DRIVE_NUMBER, drive_number);
     set_shared_var(SHARED_VARIABLE_BUFFER_TYPE, 0);            // 0: _dskbufp, 1: stack
     set_shared_var(SHARED_VARIABLE_FAKE_FLOPPY, 0);
     set_shared_var(SHARED_VARIABLE_PROTOCOL_VERSION, GEMDOS_SLOT_PROTOCOL_VERSION);
-    set_shared_var(SHARED_VARIABLE_DRIVE_COUNT, 2);
-    set_shared_var(SHARED_VARIABLE_DRIVE_NUMBER_TABLE + FS_SLOT_SD, drive_number);
-    set_shared_var(SHARED_VARIABLE_DRIVE_NUMBER_TABLE + FS_SLOT_FLASH, DRIVE_LETTER_FLASH - 'A');
-    for (int i = 2; i < GEMDRIVE_MAX_RUNTIME_DRIVES; i++)
-        set_shared_var(SHARED_VARIABLE_DRIVE_NUMBER_TABLE + i, 0xFFFFFFFF);
+    set_shared_var(SHARED_VARIABLE_DRIVE_COUNT, slots);
+    for (int i = 0; i < GEMDRIVE_MAX_RUNTIME_DRIVES; i++)
+        set_shared_var(SHARED_VARIABLE_DRIVE_NUMBER_TABLE + i, i < slots ? s_slot_drive[i] : 0xFFFFFFFF);
     // Keep booting from the Atari's own drive (later a setting)
     set_shared_var(SHARED_VARIABLE_SET_CURRENT_DRIVE, 0);
     set_shared_var(SHARED_VARIABLE_NO_INSTALL, HULK_GEMDRIVE_NO_INSTALL);
@@ -467,7 +509,7 @@ void gemdrv_command(const hulk_packet_t *pkt)
     case GEMDRVEMUL_DGETPATH_CALL:
         // d3: the GEMDOS drive number, not the slot
         write_string(GEMDRVEMUL_DEFAULT_PATH,
-                     fs_dgetpath(payloadPtr[0] == DRIVE_LETTER_FLASH - 'A' ? FS_SLOT_FLASH : FS_SLOT_SD), 128);
+                     fs_dgetpath(slot_of_drive(payloadPtr[0])), 128);
         break;
     case GEMDRVEMUL_DSETPATH_CALL: {
         char path[256];
@@ -510,44 +552,124 @@ void gemdrv_command(const hulk_packet_t *pkt)
         WRITE_AND_SWAP_LONGWORD(m, GEMDRVEMUL_WRITE_CONFIRM_STATUS, (uint32_t)GEMDOS_EACCDN);
         break;
 
-    // --- The configuration program (atari/config). Saving comes later: report a failure,
-    // so the program does not pretend it worked.
+    // --- The configuration program (atari/config) ------------------------------------
     case GEMDRVEMUL_CONFIG_GET_INFO:
         WRITE_AND_SWAP_LONGWORD(m, GEMDRVEMUL_CONFIG_VERSION, CONFIG_PROTOCOL_VERSION);
-        WRITE_AND_SWAP_LONGWORD(m, GEMDRVEMUL_CONFIG_MAX_DRIVES, CONFIG_MAX_DRIVES);
-        WRITE_AND_SWAP_LONGWORD(m, GEMDRVEMUL_CONFIG_DRIVE_COUNT, 1);
-        WRITE_AND_SWAP_LONGWORD(m, GEMDRVEMUL_CONFIG_DRIVE_LETTER, DRIVE_LETTER_FLASH);
-        WRITE_AND_SWAP_LONGWORD(m, GEMDRVEMUL_CONFIG_STATUS, CONFIG_STATUS_OK);
+        WRITE_AND_SWAP_LONGWORD(m, GEMDRVEMUL_CONFIG_MAX_DRIVES, SETTINGS_MAX_DRIVES);
+        WRITE_AND_SWAP_LONGWORD(m, GEMDRVEMUL_CONFIG_DRIVE_COUNT, settings_drive_count());
+        WRITE_AND_SWAP_LONGWORD(m, GEMDRVEMUL_CONFIG_DRIVE_LETTER, settings_flash_letter());
+        WRITE_AND_SWAP_LONGWORD(m, GEMDRVEMUL_CONFIG_STATUS, SETTINGS_OK);
         break;
     case GEMDRVEMUL_CONFIG_GET_DRIVE: {
         uint32_t index = ((uint32_t)payloadPtr[1] << 16) | payloadPtr[0];
-        char field[CONFIG_SD_PATH_LEN];
-        bool used = index == 0;
+        static const settings_drive_t none;
+        const settings_drive_t *d = index < SETTINGS_MAX_DRIVES ? settings_drive(index) : &none;
         WRITE_AND_SWAP_LONGWORD(m, GEMDRVEMUL_CONFIG_DRV_STATUS,
-                                index < CONFIG_MAX_DRIVES ? CONFIG_STATUS_OK : CONFIG_STATUS_INVALID_INDEX);
-        WRITE_WORD(m, GEMDRVEMUL_CONFIG_DRV_STATE, used ? CONFIG_DRIVE_ENABLED : CONFIG_DRIVE_EMPTY);
-        WRITE_WORD(m, GEMDRVEMUL_CONFIG_DRV_LETTER, used ? DRIVE_LETTER_SD : 0);
-        WRITE_WORD(m, GEMDRVEMUL_CONFIG_DRV_TYPE, used ? CONFIG_DRIVE_TYPE_SD : 0);
-        WRITE_WORD(m, GEMDRVEMUL_CONFIG_DRV_TRANSPORT, 0);
-        WRITE_WORD(m, GEMDRVEMUL_CONFIG_DRV_PORT, 0);
-        memset(field, 0, sizeof(field));
-        if (used)
-            strcpy(field, "SD card");
-        write_bytes(GEMDRVEMUL_CONFIG_DRV_NICKNAME, (const uint8_t *)field, CONFIG_NICKNAME_LEN);
-        memset(field, 0, sizeof(field));
-        write_bytes(GEMDRVEMUL_CONFIG_DRV_HOST, (const uint8_t *)field, CONFIG_HOST_LEN);
-        write_bytes(GEMDRVEMUL_CONFIG_DRV_MOUNT, (const uint8_t *)field, CONFIG_MOUNT_LEN);
-        if (used)
-            strcpy(field, "/HD");
-        write_bytes(GEMDRVEMUL_CONFIG_DRV_SD_PATH, (const uint8_t *)field, CONFIG_SD_PATH_LEN);
+                                index < SETTINGS_MAX_DRIVES ? SETTINGS_OK : SETTINGS_INVALID_INDEX);
+        WRITE_WORD(m, GEMDRVEMUL_CONFIG_DRV_STATE, d->state);
+        WRITE_WORD(m, GEMDRVEMUL_CONFIG_DRV_LETTER, d->letter);
+        WRITE_WORD(m, GEMDRVEMUL_CONFIG_DRV_TYPE, d->type);
+        WRITE_WORD(m, GEMDRVEMUL_CONFIG_DRV_TRANSPORT, d->transport);
+        WRITE_WORD(m, GEMDRVEMUL_CONFIG_DRV_PORT, d->port);
+        write_field(GEMDRVEMUL_CONFIG_DRV_NICKNAME, d->nickname, SETTINGS_NICK_LEN);
+        write_field(GEMDRVEMUL_CONFIG_DRV_HOST, d->host, SETTINGS_HOST_LEN);
+        write_field(GEMDRVEMUL_CONFIG_DRV_MOUNT, d->mount_path, SETTINGS_MOUNT_LEN);
+        write_field(GEMDRVEMUL_CONFIG_DRV_SD_PATH, d->sd_path, SETTINGS_SD_PATH_LEN);
         break;
     }
-    case GEMDRVEMUL_CONFIG_SET_DRIVE:
+    case GEMDRVEMUL_CONFIG_SET_DRIVE: {
+        // Index (long), state, letter, type, transport, port, then the strings
+        settings_drive_t d;
+        uint32_t index = ((uint32_t)payloadPtr[1] << 16) | payloadPtr[0];
+        const uint16_t *w = payloadPtr + 7;
+        d.state = payloadPtr[2];
+        d.letter = payloadPtr[3];
+        d.type = payloadPtr[4];
+        d.transport = payloadPtr[5];
+        d.port = payloadPtr[6];
+        payload_field(w, d.nickname, SETTINGS_NICK_LEN);
+        w += SETTINGS_NICK_LEN / 2;
+        payload_field(w, d.host, SETTINGS_HOST_LEN);
+        w += SETTINGS_HOST_LEN / 2;
+        payload_field(w, d.mount_path, SETTINGS_MOUNT_LEN);
+        w += SETTINGS_MOUNT_LEN / 2;
+        payload_field(w, d.sd_path, SETTINGS_SD_PATH_LEN);
+        WRITE_AND_SWAP_LONGWORD(m, GEMDRVEMUL_CONFIG_DRV_STATUS, settings_set_drive(index, &d));
+        break;
+    }
     case GEMDRVEMUL_CONFIG_DELETE_DRIVE:
+        WRITE_AND_SWAP_LONGWORD(m, GEMDRVEMUL_CONFIG_DRV_STATUS,
+                                settings_delete_drive(((uint32_t)payloadPtr[1] << 16) | payloadPtr[0]));
+        break;
     case GEMDRVEMUL_CONFIG_SET_CONFIG_DRIVE:
-    case GEMDRVEMUL_CONFIG_SAVE:
-        WRITE_AND_SWAP_LONGWORD(m, GEMDRVEMUL_CONFIG_DRV_STATUS, CONFIG_STATUS_FLASH_WRITE_FAILED);
-        WRITE_AND_SWAP_LONGWORD(m, GEMDRVEMUL_CONFIG_STATUS, CONFIG_STATUS_FLASH_WRITE_FAILED);
+        WRITE_AND_SWAP_LONGWORD(m, GEMDRVEMUL_CONFIG_DRV_STATUS,
+                                settings_set_flash_letter(((uint32_t)payloadPtr[1] << 16) | payloadPtr[0]));
+        break;
+    case GEMDRVEMUL_CONFIG_SAVE: {
+        int r = settings_save();
+        WRITE_AND_SWAP_LONGWORD(m, GEMDRVEMUL_CONFIG_DRV_STATUS, r);
+        ESP_LOGI(TAG, "settings saved: %d", r);
+        break;
+    }
+    case GEMDRVEMUL_CONFIG_GET_NETWORK: {
+        const settings_net_t *n = settings_net();
+        WRITE_AND_SWAP_LONGWORD(m, GEMDRVEMUL_CONFIG_NET_STATUS, SETTINGS_NET_OK);
+        WRITE_WORD(m, GEMDRVEMUL_CONFIG_NET_AUTH, n->auth_mode);
+        WRITE_WORD(m, GEMDRVEMUL_CONFIG_NET_DHCP, n->use_dhcp);
+        write_field(GEMDRVEMUL_CONFIG_NET_SSID, n->ssid, sizeof(n->ssid));
+        write_field(GEMDRVEMUL_CONFIG_NET_PASSWORD, n->password, sizeof(n->password));
+        write_field(GEMDRVEMUL_CONFIG_NET_COUNTRY, n->country, sizeof(n->country));
+        write_field(GEMDRVEMUL_CONFIG_NET_IP, n->ip_address, sizeof(n->ip_address));
+        write_field(GEMDRVEMUL_CONFIG_NET_NETMASK, n->netmask, sizeof(n->netmask));
+        write_field(GEMDRVEMUL_CONFIG_NET_GATEWAY, n->gateway, sizeof(n->gateway));
+        write_field(GEMDRVEMUL_CONFIG_NET_DNS, n->primary_dns, sizeof(n->primary_dns));
+        break;
+    }
+    case GEMDRVEMUL_CONFIG_SET_NETWORK: {
+        settings_net_t n;
+        const uint16_t *w = payloadPtr + 2;
+        n.auth_mode = payloadPtr[0];
+        n.use_dhcp = payloadPtr[1];
+        payload_field(w, n.ssid, sizeof(n.ssid));
+        w += sizeof(n.ssid) / 2;
+        payload_field(w, n.password, sizeof(n.password));
+        w += sizeof(n.password) / 2;
+        payload_field(w, n.country, sizeof(n.country));
+        w += sizeof(n.country) / 2;
+        payload_field(w, n.ip_address, sizeof(n.ip_address));
+        w += sizeof(n.ip_address) / 2;
+        payload_field(w, n.netmask, sizeof(n.netmask));
+        w += sizeof(n.netmask) / 2;
+        payload_field(w, n.gateway, sizeof(n.gateway));
+        w += sizeof(n.gateway) / 2;
+        payload_field(w, n.primary_dns, sizeof(n.primary_dns));
+        WRITE_AND_SWAP_LONGWORD(m, GEMDRVEMUL_CONFIG_NET_STATUS, settings_net_stage(&n));
+        break;
+    }
+    case GEMDRVEMUL_CONFIG_SAVE_NETWORK:
+        WRITE_AND_SWAP_LONGWORD(m, GEMDRVEMUL_CONFIG_NET_STATUS, settings_net_save());
+        break;
+    case GEMDRVEMUL_CONFIG_GET_RTC: {
+        const settings_rtc_t *r = settings_rtc();
+        WRITE_AND_SWAP_LONGWORD(m, GEMDRVEMUL_CONFIG_RTC_STATUS, SETTINGS_RTC_OK);
+        WRITE_WORD(m, GEMDRVEMUL_CONFIG_RTC_ENABLED, r->enabled);
+        write_field(GEMDRVEMUL_CONFIG_RTC_NTP, r->ntp_server, sizeof(r->ntp_server));
+        write_field(GEMDRVEMUL_CONFIG_RTC_UTC, r->utc_offset, sizeof(r->utc_offset));
+        break;
+    }
+    case GEMDRVEMUL_CONFIG_SET_RTC: {
+        settings_rtc_t r;
+        r.enabled = payloadPtr[0];
+        payload_field(payloadPtr + 1, r.ntp_server, sizeof(r.ntp_server));
+        payload_field(payloadPtr + 1 + sizeof(r.ntp_server) / 2, r.utc_offset, sizeof(r.utc_offset));
+        WRITE_AND_SWAP_LONGWORD(m, GEMDRVEMUL_CONFIG_RTC_STATUS, settings_rtc_stage(&r));
+        break;
+    }
+    case GEMDRVEMUL_CONFIG_SAVE_RTC:
+        WRITE_AND_SWAP_LONGWORD(m, GEMDRVEMUL_CONFIG_RTC_STATUS, settings_rtc_save());
+        break;
+    case GEMDRVEMUL_CONFIG_RESTART:
+        s_restart = true;       // after the answer, see gemdrv_restart_wanted
         break;
 
     case GEMDRVEMUL_DEBUG:
@@ -559,6 +681,7 @@ void gemdrv_command(const hulk_packet_t *pkt)
     case GEMDRVEMUL_FSETDTA_CALL:
     case GEMDRVEMUL_DGETDRV_CALL:
     case GEMDRVEMUL_MALLOC_CALL:
+    case GEMDRVEMUL_CONFIG_CHECK_UPDATE:
         break;
 
     default:
@@ -569,4 +692,9 @@ void gemdrv_command(const hulk_packet_t *pkt)
 
     write_random_token();
     *((volatile uint32_t *)(m + GEMDRVEMUL_RANDOM_TOKEN_SEED)) = esp_random();
+}
+
+bool gemdrv_restart_wanted(void)
+{
+    return s_restart;
 }

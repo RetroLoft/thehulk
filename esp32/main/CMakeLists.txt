@@ -1,4 +1,4 @@
-idf_component_register(SRCS "main.c" "fpga.c" "hulk.c" "status_led.c" "bootrec.c" "shadow.c" "gemdrv.c" "gemdrv_fs.c" "sd.c"
+idf_component_register(SRCS "main.c" "fpga.c" "hulk.c" "status_led.c" "bootrec.c" "shadow.c" "gemdrv.c" "gemdrv_fs.c" "settings.c" "sd.c"
                        INCLUDE_DIRS "."
                        PRIV_REQUIRES esp_driver_spi esp_driver_gpio esp_driver_rmt esp_timer nvs_flash esp_hw_support fatfs sdmmc esp_driver_sdspi vfs)
 

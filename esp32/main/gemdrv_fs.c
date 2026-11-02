@@ -6,15 +6,11 @@
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
-#include "esp_log.h"
 #include "ff.h"
 #include "gemdrv_fs.h"
 #include "gemdrv_layout.h"
 #include "sd.h"
 
-static const char *TAG = "gemdrv_fs";
-
-#define ROOT        "0:/HD"         // FatFs drive 0 = the card mounted by sd.c
 #define MAX_PATH    256
 #define MAX_FILES   16
 #define MAX_SEARCH  16
@@ -26,7 +22,11 @@ static const char *TAG = "gemdrv_fs";
 #define FA_ST_VOLUME  0x08
 #define FA_ST_DIR     0x10
 
-static char s_cwd[MAX_PATH];        // current folder, Atari form: "" or "\DIR\SUB"
+// Per drive slot: the folder on the card (FatFs drive 0 = the card mounted by sd.c) and the
+// current folder, Atari form: "" or "\DIR\SUB"
+static char s_root[FS_MAX_SLOTS][MAX_PATH];
+static char s_cwds[FS_MAX_SLOTS][MAX_PATH];
+static int s_flash_slot = -1;
 
 // The flash drive: one folder, read-only
 extern const uint8_t thehulk_prg_start[] asm("_binary_THEHULK_PRG_start");
@@ -69,9 +69,26 @@ typedef struct {
 static search_t s_search[MAX_SEARCH];
 static uint32_t s_age;
 
+void fs_set_sd_slot(int slot, const char *sd_path)
+{
+    if (slot < 0 || slot >= FS_MAX_SLOTS)
+        return;
+    size_t n = snprintf(s_root[slot], MAX_PATH, "0:%s%s", sd_path[0] == '/' || sd_path[0] == '\\' ? "" : "/", sd_path);
+    for (size_t i = 0; i < n && i < MAX_PATH; i++)
+        if (s_root[slot][i] == '\\')
+            s_root[slot][i] = '/';
+    while (n > 2 && s_root[slot][n - 1] == '/')
+        s_root[slot][--n] = 0;
+}
+
+void fs_set_flash_slot(int slot)
+{
+    s_flash_slot = slot;
+}
+
 void fs_reset(void)
 {
-    s_cwd[0] = 0;
+    memset(s_cwds, 0, sizeof(s_cwds));
     flash_files_init();
     if (!s_files)
         s_files = calloc(MAX_FILES, sizeof(file_t));
@@ -90,10 +107,12 @@ void fs_reset(void)
 
 // --- Paths --------------------------------------------------------------------------
 
-// Atari path -> FatFs path below ROOT. Handles the drive letter, the current folder,
+// Atari path -> FatFs path below the folder of the slot. Handles the drive letter, the current folder,
 // "." and "..". Returns false when the path would leave the root.
-static bool to_fat(const char *apath, char *out, size_t size)
+static bool to_fat(int slot, const char *apath, char *out, size_t size)
 {
+    if (slot < 0 || slot >= FS_MAX_SLOTS || !s_root[slot][0])
+        return false;
     char comp[16][13];
     int n = 0;
     if (isalpha((unsigned char)apath[0]) && apath[1] == ':')
@@ -101,7 +120,7 @@ static bool to_fat(const char *apath, char *out, size_t size)
     const char *p = apath;
     if (*p != '\\') {
         // Relative: start from the current folder
-        const char *c = s_cwd;
+        const char *c = s_cwds[slot];
         while (*c) {
             while (*c == '\\')
                 c++;
@@ -140,7 +159,7 @@ static bool to_fat(const char *apath, char *out, size_t size)
             return false;
         strcpy(comp[n++], part);
     }
-    size_t len = snprintf(out, size, "%s", ROOT);
+    size_t len = snprintf(out, size, "%s", s_root[slot]);
     for (int i = 0; i < n && len < size; i++)
         len += snprintf(out + len, size - len, "/%s", comp[i]);
     return len < size;
@@ -346,7 +365,7 @@ int16_t fs_fsfirst(int slot, uint32_t dta, const char *path, uint16_t attribs, u
     const char *pattern;
     memset(dta_out, 0, FS_DTA_SIZE);
     split_pattern(path, adir, sizeof(adir), &pattern);
-    if (slot == FS_SLOT_FLASH) {
+    if (slot == s_flash_slot) {
         if (!flash_is_root(adir))
             return GEMDOS_EPTHNF;
         search_t *s = new_search(dta);
@@ -357,7 +376,7 @@ int16_t fs_fsfirst(int slot, uint32_t dta, const char *path, uint16_t attribs, u
         int16_t r = next_match(s, dta_out);
         return r == GEMDOS_ENMFIL ? GEMDOS_EFILNF : r;
     }
-    if (!sd_ready() || !to_fat(adir[0] ? adir : ".", fat, sizeof(fat)))
+    if (!sd_ready() || !to_fat(slot, adir[0] ? adir : ".", fat, sizeof(fat)))
         return GEMDOS_EPTHNF;
 
     search_t *s = new_search(dta);
@@ -412,7 +431,7 @@ int32_t fs_fopen(int slot, const char *path, uint16_t mode)
     char fat[MAX_PATH];
     if ((mode & 3) != 0)
         return GEMDOS_EACCDN;           // read-only for now
-    if (slot == FS_SLOT_FLASH) {
+    if (slot == s_flash_slot) {
         const flash_file_t *ff = flash_find(path);
         if (!ff || !s_files)
             return GEMDOS_EFILNF;
@@ -428,7 +447,7 @@ int32_t fs_fopen(int slot, const char *path, uint16_t mode)
         }
         return GEMDOS_ENHNDL;
     }
-    if (!sd_ready() || !s_files || !to_fat(path, fat, sizeof(fat)))
+    if (!sd_ready() || !s_files || !to_fat(slot, path, fat, sizeof(fat)))
         return GEMDOS_EFILNF;
     for (int i = 0; i < MAX_FILES; i++) {
         if (s_files[i].used)
@@ -517,14 +536,14 @@ int32_t fs_fattrib(int slot, const char *path, uint16_t flag, uint16_t attr)
     char fat[MAX_PATH];
     if (flag)
         return GEMDOS_EACCDN;           // setting attributes: read-only for now
-    if (slot == FS_SLOT_FLASH) {
+    if (slot == s_flash_slot) {
         if (flash_is_root(path))
             return FA_ST_DIR;
         return flash_find(path) ? AM_RDO : GEMDOS_EFILNF;
     }
-    if (!sd_ready() || !to_fat(path, fat, sizeof(fat)))
+    if (!sd_ready() || !to_fat(slot, path, fat, sizeof(fat)))
         return GEMDOS_EFILNF;
-    if (!strcmp(fat, ROOT))
+    if (!strcmp(fat, s_root[slot]))
         return FA_ST_DIR;
     FILINFO fno;
     FRESULT fr = f_stat(fat, &fno);
@@ -536,26 +555,25 @@ int32_t fs_fattrib(int slot, const char *path, uint16_t flag, uint16_t attr)
 int16_t fs_dsetpath(int slot, const char *path)
 {
     char fat[MAX_PATH];
-    if (slot == FS_SLOT_FLASH)
+    if (slot == s_flash_slot)
         return flash_is_root(path) ? GEMDOS_EOK : GEMDOS_EPTHNF;
-    if (!sd_ready() || !to_fat(path, fat, sizeof(fat)))
+    if (!sd_ready() || !to_fat(slot, path, fat, sizeof(fat)))
         return GEMDOS_EPTHNF;
-    if (strcmp(fat, ROOT)) {
+    if (strcmp(fat, s_root[slot])) {
         FILINFO fno;
         if (f_stat(fat, &fno) != FR_OK || !(fno.fattrib & AM_DIR))
             return GEMDOS_EPTHNF;
     }
     // Back to Atari form: "0:/HD/A/B" -> "\A\B"
-    const char *rel = fat + strlen(ROOT);
+    const char *rel = fat + strlen(s_root[slot]);
     size_t i = 0;
-    for (; rel[i] && i + 1 < sizeof(s_cwd); i++)
-        s_cwd[i] = rel[i] == '/' ? '\\' : rel[i];
-    s_cwd[i] = 0;
-    ESP_LOGD(TAG, "current folder \"%s\"", s_cwd);
+    for (; rel[i] && i + 1 < MAX_PATH; i++)
+        s_cwds[slot][i] = rel[i] == '/' ? '\\' : rel[i];
+    s_cwds[slot][i] = 0;
     return GEMDOS_EOK;
 }
 
 const char *fs_dgetpath(int slot)
 {
-    return slot == FS_SLOT_FLASH ? "" : s_cwd;
+    return slot == s_flash_slot || slot < 0 || slot >= FS_MAX_SLOTS ? "" : s_cwds[slot];
 }

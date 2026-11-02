@@ -1,5 +1,5 @@
-// GEMDRIVE storage: the GEMDOS calls for the cartridge drives. Slot 0 is the folder HD of
-// the microSD card, slot 1 the flash drive with the configuration program.
+// GEMDRIVE storage: the GEMDOS calls for the cartridge drives, by drive slot. A slot is a
+// folder on the microSD card, or the flash drive with the configuration program.
 // Read-only for now: everything that would change the card returns EACCDN.
 // Paths are Atari paths ("C:\DIR\FILE.PRG", or relative to the current folder);
 // results are GEMDOS error codes (negative) or values.
@@ -9,9 +9,10 @@
 #include <stdint.h>
 
 #define FS_DTA_SIZE  44
-#define FS_SLOT_SD     0
-#define FS_SLOT_FLASH  1
+#define FS_MAX_SLOTS 9
 
+void fs_set_sd_slot(int slot, const char *sd_path);
+void fs_set_flash_slot(int slot);
 void fs_reset(void);
 
 // The DTA is filled in the Atari's byte order (dta[0] is the byte at the DTA address)
