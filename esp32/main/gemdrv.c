@@ -1,9 +1,14 @@
 // GEMDRIVE emulation, see gemdrv.h. The command handlers follow gemdrvemul.c of
 // SideTNFS-Firmware: same shared memory layout, same word order (shadow.h).
 #include <ctype.h>
+#include <stdio.h>
 #include <string.h>
 #include "esp_log.h"
+#include "esp_heap_caps.h"
 #include "esp_random.h"
+#include "esp_rom_crc.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include "gemdrv.h"
 #include "gemdrv_layout.h"
 #include "shadow.h"
@@ -11,6 +16,10 @@
 static const char *TAG = "gemdrv";
 
 #define ATARI_ROM4_START  0xFA0000
+
+// Token polls before a GEMDRIVE command times out (measured on the Falcon: 730000 polls/s)
+#define SYNC_TIMEOUT_68000  0x000FFFFF
+#define SYNC_TIMEOUT_68030  0x00500000
 
 static uint32_t random_token;
 
@@ -100,6 +109,157 @@ static bool is_root(const char *path)
     return !path[0] || (path[0] == '\\' && !path[1]);
 }
 
+// GEMDRIVE sends the TOS crash area $380-$3FF at every start (after the d3-d5 header):
+// $380 proc_lives = $12345678 when valid, $384 d0-d7, $3A4 a0-a7, $3C4 exception
+// number (first byte), $3C8 usp, $3CC the first 16 words of the supervisor stack
+static void log_crash_info(const hulk_packet_t *pkt)
+{
+    const uint16_t *w = pkt->words + 2 + 6;     // word i = address $380 + 2 * i
+    if ((pkt->size + 1) / 2 < 2 + 6 + 64)
+        return;
+    uint32_t magic = ((uint32_t)w[0] << 16) | w[1];
+    if (magic != 0x12345678) {
+        ESP_LOGI(TAG, "no crash recorded (proc_lives %08lx)", (unsigned long)magic);
+        return;
+    }
+#define L(i) (((uint32_t)w[i] << 16) | w[(i) + 1])
+    const uint16_t *stk = w + 0x26;             // $3CC
+    unsigned vec = w[0x22] >> 8;                // $3C4
+    ESP_LOGW(TAG, "last crash: exception %u (%u bombs), SR %04x, PC %08lx, frame format %X",
+             vec, vec, stk[0], (unsigned long)(((uint32_t)stk[1] << 16) | stk[2]), stk[3] >> 12);
+    if ((stk[3] >> 12) == 0xA || (stk[3] >> 12) == 0xB)
+        ESP_LOGW(TAG, "bus error: SSW %04x, data fault address %08lx", stk[5],
+                 (unsigned long)(((uint32_t)stk[8] << 16) | stk[9]));
+    ESP_LOGW(TAG, "d0-d3 %08lx %08lx %08lx %08lx  d4-d7 %08lx %08lx %08lx %08lx",
+             (unsigned long)L(2), (unsigned long)L(4), (unsigned long)L(6), (unsigned long)L(8),
+             (unsigned long)L(10), (unsigned long)L(12), (unsigned long)L(14), (unsigned long)L(16));
+    ESP_LOGW(TAG, "a0-a3 %08lx %08lx %08lx %08lx  a4-a7 %08lx %08lx %08lx %08lx  usp %08lx",
+             (unsigned long)L(18), (unsigned long)L(20), (unsigned long)L(22), (unsigned long)L(24),
+             (unsigned long)L(26), (unsigned long)L(28), (unsigned long)L(30), (unsigned long)L(32),
+             (unsigned long)L(0x24));
+    char line[100];
+    size_t len = 0;
+    for (int i = 0; i < 16; i++)
+        len += snprintf(line + len, sizeof(line) - len, " %04x", stk[i]);
+    ESP_LOGW(TAG, "stack:%s", line);
+#undef L
+}
+
+// Diagnostics: GEMDRIVE sends the TOS ROM ($E00000-$E7FFFF) in blocks of 2 KB when
+// SHARED_VARIABLE_DUMP_TOS is set. Once per ESP32 start: printed as hex lines
+// "TOS <address> <32 bytes>" by a task on the second core, the Atari does not wait for it.
+#ifndef TOS_DUMP
+#define TOS_DUMP   0         // 1: dump the ROM (done for TOS 4.04, 2026-11-02)
+#endif
+#define TOS_START  0xE00000
+#define TOS_SIZE   0x80000
+
+static uint8_t *s_tos;
+static bool s_tos_done;
+
+static void tos_print_task(void *arg)
+{
+    vTaskDelay(pdMS_TO_TICKS(5000));             // after the boot messages
+    printf("TOS dump start\n");
+    for (uint32_t off = 0; off < TOS_SIZE; off += 32) {
+        printf("TOS %06lx ", (unsigned long)(TOS_START + off));
+        for (int i = 0; i < 32; i++)
+            printf("%02x", s_tos[off + i]);
+        printf("\n");
+        if ((off & 0x3ff) == 0x3e0)
+            vTaskDelay(1);
+    }
+    printf("TOS dump end, crc32 %08lx\n", (unsigned long)esp_rom_crc32_le(0, s_tos, TOS_SIZE));
+    vTaskDelete(NULL);
+}
+
+static void tos_block(uint32_t addr, const uint16_t *w, unsigned bytes)
+{
+    if (s_tos_done || addr < TOS_START || addr + bytes > TOS_START + TOS_SIZE)
+        return;
+    if (!s_tos)
+        s_tos = heap_caps_malloc(TOS_SIZE, MALLOC_CAP_SPIRAM);
+    if (!s_tos)
+        return;
+    uint8_t *p = s_tos + (addr - TOS_START);
+    for (unsigned i = 0; i < bytes / 2; i++) {
+        p[2 * i] = w[i] >> 8;
+        p[2 * i + 1] = w[i] & 0xFF;
+    }
+    if (addr + bytes == TOS_START + TOS_SIZE) {
+        s_tos_done = true;
+        set_shared_var(SHARED_VARIABLE_DUMP_TOS, 0);
+        ESP_LOGI(TAG, "TOS ROM received");
+        xTaskCreatePinnedToCore(tos_print_task, "tosdump", 4096, NULL, 1, NULL, 1);
+    }
+}
+
+// Diagnostics: a file call reported by GEMDRIVE's hook (trace_call in gemdrive.s). The
+// Fread buffer is only filled after the call, so it is sent with the next Fclose.
+static void log_trace(const hulk_packet_t *pkt, unsigned opcode)
+{
+    uint32_t arg1 = ((uint32_t)pkt->words[5] << 16) | pkt->words[4];
+    uint32_t arg2 = ((uint32_t)pkt->words[7] << 16) | pkt->words[6];
+    const uint16_t *w = pkt->words + 8;
+    unsigned bytes = pkt->size > 16 ? (pkt->size - 16) & ~1u : 0;
+    char text[520];
+    unsigned n = 0;
+    for (unsigned i = 0; i < bytes && n < sizeof(text) - 1; i++) {
+        uint8_t c = i & 1 ? w[i / 2] & 0xFF : w[i / 2] >> 8;
+        if (!c && opcode != 0x3E)
+            break;
+        text[n++] = c >= 32 && c < 127 ? c : '.';
+    }
+    text[n] = 0;
+    switch (opcode) {
+    case 0x3B:
+        ESP_LOGI(TAG, "trace Dsetpath \"%s\" (AES rez %lu, change %lu, mode %04lx, video %04lx)", text,
+                 (unsigned long)(arg2 >> 16), (unsigned long)(arg2 & 0xFFFF),
+                 (unsigned long)(arg1 >> 16), (unsigned long)(arg1 & 0xFFFF));
+        break;
+    case 0x3D:
+        ESP_LOGI(TAG, "trace Fopen \"%s\" (AES rez %lu, change %lu, mode %04lx, video %04lx)", text,
+                 (unsigned long)(arg2 >> 16), (unsigned long)(arg2 & 0xFFFF),
+                 (unsigned long)(arg1 >> 16), (unsigned long)(arg1 & 0xFFFF));
+        break;
+    case 0x4E:
+        ESP_LOGI(TAG, "trace Fsfirst \"%s\" (AES rez %lu, change %lu, mode %04lx, video %04lx)", text,
+                 (unsigned long)(arg2 >> 16), (unsigned long)(arg2 & 0xFFFF),
+                 (unsigned long)(arg1 >> 16), (unsigned long)(arg1 & 0xFFFF));
+        break;
+    case 0x3F: {
+        // The data is the frame of the call: buffer address at byte 14
+        uint32_t buf = ((uint32_t)w[7] << 16) | w[8];
+        set_shared_var(SHARED_VARIABLE_TRACE_BUFFER, buf);
+        ESP_LOGI(TAG, "trace Fread handle %lu, %lu bytes to %06lx", (unsigned long)(arg1 >> 16),
+                 (unsigned long)((arg1 << 16) | (arg2 >> 16)), (unsigned long)buf);
+        break;
+    }
+    case 0x3E:
+        ESP_LOGI(TAG, "trace Fclose handle %lu, last buffer:", (unsigned long)(arg1 >> 16));
+        for (unsigned i = 0; i < n; i += 100)
+            ESP_LOGI(TAG, "  %.100s", text + i);
+        break;
+    default:
+        ESP_LOGI(TAG, "trace call 0x%02x", opcode);
+        break;
+    }
+}
+
+static void debug_command(const hulk_packet_t *pkt)
+{
+    uint32_t addr = ((uint32_t)pkt->words[3] << 16) | pkt->words[2];   // d3, low word first
+    unsigned bytes = pkt->size > 16 ? (pkt->size - 16) & ~1u : 0;
+    if ((addr >> 16) == 0x5452) {
+        log_trace(pkt, addr & 0xFF);
+        return;
+    }
+    if (addr == 0x380)
+        log_crash_info(pkt);
+    else
+        tos_block(addr, pkt->words + 2 + 6, bytes);
+}
+
 void gemdrv_init(void)
 {
     uintptr_t m = shared();
@@ -115,11 +275,15 @@ void gemdrv_init(void)
     WRITE_AND_SWAP_LONGWORD(m, GEMDRVEMUL_TIMEOUT_SEC, 45);
 
     // GEMDRIVE on, floppy emulation off
+#ifdef HULK_GEMDRIVE_OFF
+    WRITE_WORD(m, GEMDRVEMUL_FLOPPY_SESSION_INSTALL_GEMDRIVE, 0);
+#else
     WRITE_WORD(m, GEMDRVEMUL_FLOPPY_SESSION_INSTALL_GEMDRIVE, 1);
+#endif
     WRITE_WORD(m, GEMDRVEMUL_FLOPPY_SESSION_INSTALL_FLOPPY, 0);
 
-    // One drive, C:
-    const uint32_t drive_number = 2;
+    // One drive, N: (C: is usually a hard disk, on the Falcon the internal IDE drive)
+    const uint32_t drive_number = 'N' - 'A';
     set_shared_var(SHARED_VARIABLE_FIRST_FILE_DESCRIPTOR, FIRST_FILE_DESCRIPTOR);
     set_shared_var(SHARED_VARIABLE_DRIVE_LETTER, 'A' + drive_number);
     set_shared_var(SHARED_VARIABLE_DRIVE_NUMBER, drive_number);
@@ -130,6 +294,16 @@ void gemdrv_init(void)
     set_shared_var(SHARED_VARIABLE_DRIVE_NUMBER_TABLE, drive_number);
     for (int i = 1; i < GEMDRIVE_MAX_RUNTIME_DRIVES; i++)
         set_shared_var(SHARED_VARIABLE_DRIVE_NUMBER_TABLE + i, 0xFFFFFFFF);
+    // Keep booting from the Atari's own drive (later a setting)
+    set_shared_var(SHARED_VARIABLE_SET_CURRENT_DRIVE, 0);
+    set_shared_var(SHARED_VARIABLE_NO_INSTALL, HULK_GEMDRIVE_NO_INSTALL);
+    set_shared_var(SHARED_VARIABLE_CODE_BUFFER, 0);
+    set_shared_var(SHARED_VARIABLE_HOOK_STACK, 0);
+    set_shared_var(SHARED_VARIABLE_TRACE_BUFFER, 0);
+    set_shared_var(SHARED_VARIABLE_DUMP_TOS, 0);              // set once the TOS version is known
+    // GEMDRIVE polls the token this many times before a command times out: about
+    // 5 s on an 8 MHz 68000. A 68030 polls about 4x faster, see SVERSION below.
+    set_shared_var(SHARED_VARIABLE_SYNC_TIMEOUT, SYNC_TIMEOUT_68000);
 
     write_string(GEMDRVEMUL_DEFAULT_PATH, "", 128);
     memset(s_dtas, 0, sizeof(s_dtas));
@@ -143,6 +317,10 @@ void gemdrv_command(const hulk_packet_t *pkt)
     // The first two payload words are the token (d2), the parameters follow
     random_token = pkt->words[1] | ((uint32_t)pkt->words[0] << 16);
     const uint16_t *payloadPtr = pkt->words + 2;
+#if HULK_GEMDRIVE_NO_INSTALL
+    static unsigned s_seq;
+    ESP_LOGI(TAG, "#%u cmd %04x, %u bytes, token %08lx", ++s_seq, pkt->cmd, pkt->size, (unsigned long)random_token);
+#endif
 
     switch (pkt->cmd) {
     case GEMDRVEMUL_PING:
@@ -190,6 +368,18 @@ void gemdrv_command(const hulk_packet_t *pkt)
         uint32_t value = ((uint32_t)payloadPtr[3] << 16) | payloadPtr[2];   // d4
         set_shared_var(index, value);
         ESP_LOGI(TAG, "SET_SHARED_VAR %lu = %08lx", (unsigned long)index, (unsigned long)value);
+        // First command of a boot, also after a warm reset (no gemdrv_init then): the
+        // addresses of GEMDRIVE's wait code RAM and hook stack are from the previous boot
+        if (index == SHARED_VARIABLE_SVERSION) {
+            set_shared_var(SHARED_VARIABLE_CODE_BUFFER, 0);
+            set_shared_var(SHARED_VARIABLE_HOOK_STACK, 0);
+        }
+        // TOS 3 and 4: a TT or Falcon with a 68030
+        if (index == SHARED_VARIABLE_SVERSION && (value >> 16) >= 0x0300)
+            set_shared_var(SHARED_VARIABLE_SYNC_TIMEOUT, SYNC_TIMEOUT_68030);
+        // Only TOS 4 (Falcon) has its ROM at $E00000-$E7FFFF
+        if (TOS_DUMP && index == SHARED_VARIABLE_SVERSION && (value >> 16) >= 0x0400 && !s_tos_done)
+            set_shared_var(SHARED_VARIABLE_DUMP_TOS, 1);
         break;
     }
 
@@ -303,9 +493,12 @@ void gemdrv_command(const hulk_packet_t *pkt)
         WRITE_AND_SWAP_LONGWORD(m, GEMDRVEMUL_WRITE_CONFIRM_STATUS, (uint32_t)GEMDOS_EIHNDL);
         break;
 
+    case GEMDRVEMUL_DEBUG:
+        debug_command(pkt);
+        break;
+
     case GEMDRVEMUL_CANCEL:
     case GEMDRVEMUL_SHOW_VECTOR_CALL:
-    case GEMDRVEMUL_DEBUG:
     case GEMDRVEMUL_FSETDTA_CALL:
     case GEMDRVEMUL_DGETDRV_CALL:
     case GEMDRVEMUL_MALLOC_CALL:

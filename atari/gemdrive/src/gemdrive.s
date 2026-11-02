@@ -64,7 +64,7 @@ PRG_STRUCT_SIZE         equ 28         ; Size of the GEMDOS structure in the exe
                                        ; 4 bytes: g_hflags
                                        ; 2 bytes: g_absflg
 PRG_MAGIC_NUMBER        equ $601A      ; Magic number of the PRG file
-STACK_SIZE_HACK_PEXEC   equ 50         ; This is the size of the stack to hack the Pexec() function in <=1.06 TOS versions
+STACK_SIZE_HACK_PEXEC   equ 52         ; TheHulk: offset of the caller's stack pointer on the hook stack (the Pexec() hack for TOS <= 1.06 uses it)
                                        ; The size is the same as the size of the movem.l in the save_regs/restore_regs macros plus 4
 
 ; Fase 1 (multi-drive, 68k-side only): the Pico must publish a drive table
@@ -103,6 +103,8 @@ ROM3_START_ADDR         equ $FB0000 ; ROM3 start address
 ROM_EXCHG_BUFFER_ADDR   equ (ROM3_START_ADDR)               ; ROM4 buffer address
 RANDOM_TOKEN_ADDR:      equ (ROM_EXCHG_BUFFER_ADDR)
 RANDOM_TOKEN_SEED_ADDR: equ (RANDOM_TOKEN_ADDR + 4) ; RANDOM_TOKEN_ADDR + 0 bytes
+CODE_BUFFER_SIZE:       equ 64        ; Bytes of RAM for the token wait code
+HOOK_STACK_SIZE:        equ 1024      ; Bytes of RAM for the stack of the GEMDOS hook
 RANDOM_TOKEN_POST_WAIT: equ $1        ; Wait this cycles after the random number generator is ready
 
 CMD_MAGIC_NUMBER        equ (ROM3_START_ADDR + $ABCD)       ; Magic number to identify a command
@@ -183,6 +185,13 @@ SHARED_VARIABLE_FAKE_FLOPPY             equ SHARED_VARIABLE_SHARED_FUNCTIONS_SIZ
 SHARED_VARIABLE_PROTOCOL_VERSION        equ SHARED_VARIABLE_SHARED_FUNCTIONS_SIZE + 5             ; Protocol version set by the Pico (must equal GEMDOS_SLOT_PROTOCOL_VERSION)
 SHARED_VARIABLE_DRIVE_COUNT             equ SHARED_VARIABLE_SHARED_FUNCTIONS_SIZE + 6             ; Number of active entries in the drive_number table (1..SIDETNFS_MAX_RUNTIME_DRIVES)
 SHARED_VARIABLE_DRIVE_NUMBER_TABLE      equ SHARED_VARIABLE_SHARED_FUNCTIONS_SIZE + 7             ; Base index of a SIDETNFS_MAX_RUNTIME_DRIVES-entry table of GEMDOS drive numbers (indexes +7..+15)
+SHARED_VARIABLE_SET_CURRENT_DRIVE       equ SHARED_VARIABLE_SHARED_FUNCTIONS_SIZE + 16            ; TheHulk: non-zero = make slot 0 the current drive at boot (boot from the cartridge drive)
+SHARED_VARIABLE_DUMP_TOS                equ SHARED_VARIABLE_SHARED_FUNCTIONS_SIZE + 17            ; TheHulk: non-zero = send the TOS ROM to the ESP32 at boot (diagnostics)
+SHARED_VARIABLE_SYNC_TIMEOUT            equ SHARED_VARIABLE_SHARED_FUNCTIONS_SIZE + 18            ; TheHulk: polls of the token before a command times out (higher on a 68030, it polls faster)
+SHARED_VARIABLE_NO_INSTALL              equ SHARED_VARIABLE_SHARED_FUNCTIONS_SIZE + 19            ; TheHulk diagnostics: 1 = boot and send the commands, but install no drive and no GEMDOS hook; 2 = install the hook, but no drive
+SHARED_VARIABLE_CODE_BUFFER             equ SHARED_VARIABLE_SHARED_FUNCTIONS_SIZE + 20            ; TheHulk: RAM for the token wait code, not _dskbufp: disk drivers use that buffer (0 = not allocated yet)
+SHARED_VARIABLE_TRACE_BUFFER            equ SHARED_VARIABLE_SHARED_FUNCTIONS_SIZE + 21            ; TheHulk diagnostics: buffer of the last Fread, set by the ESP32
+SHARED_VARIABLE_HOOK_STACK              equ SHARED_VARIABLE_SHARED_FUNCTIONS_SIZE + 22            ; TheHulk: top of our own stack for the GEMDOS hook (0 = not allocated)
 
 GEMDRVEMUL_TIMEOUT_SEC  equ (ROM_EXCHG_BUFFER_ADDR + $8)     ; ROM_EXCHG_BUFFER_ADDR + 8 bytes
 GEMDRVEMUL_PING_STATUS  equ (GEMDRVEMUL_TIMEOUT_SEC + $4)    ; GEMDRVEMUL_TIMEOUT_SEC + 4 bytes
@@ -256,11 +265,34 @@ GEMDOS_EINTRN           equ -65 ; GEMDOS Internal error
 ; Don't forget to update STACK_SIZE_HACK_PEXEC if you change the number of registers
 restore_regs        macro
                     movem.l (sp)+, d1-d7/a2-a6
+                    move.l (sp)+, a1
+                    move.l (sp), sp                      ; Back to the stack of the caller
                     endm
 
 ; Save the registers in the interrupt handler
 ; Don't forget to update STACK_SIZE_HACK_PEXEC if you change the number of registers
+; TheHulk: the hook runs on its own stack. TOS 4.04 starts the AES on a stack of only
+; 132 bytes above its variables at $8F9E (see $E1F38C): our registers, commands and
+; nested GEMDOS call ran into them, which gave a low resolution or two bombs.
 save_regs           macro
+                    move.l a1, d0                        ; d0 is free: GEMDOS returns its result in it
+                    move.l (GEMDRVEMUL_SHARED_VARIABLES + (SHARED_VARIABLE_HOOK_STACK * 4)), a1
+                    cmp.w #0, a1
+                    beq.s .\@save_regs_same_stack
+                    cmp.l a1, sp                         ; Already on our stack (a nested call without
+                    bhs.s .\@save_regs_switch            ; the reentry lock)? Then stay where we are
+                    lea -HOOK_STACK_SIZE(a1), a1
+                    cmp.l a1, sp
+                    bhs.s .\@save_regs_same_stack
+.\@save_regs_switch:
+                    move.l sp, a1
+                    move.l (GEMDRVEMUL_SHARED_VARIABLES + (SHARED_VARIABLE_HOOK_STACK * 4)), sp
+                    bra.s .\@save_regs_push
+.\@save_regs_same_stack:
+                    move.l sp, a1
+.\@save_regs_push:
+                    move.l a1, -(sp)                     ; The stack of the caller
+                    move.l d0, -(sp)                     ; a1 of the caller
                     movem.l d1-d7/a2-a6,-(sp)
                     endm
 
@@ -308,6 +340,34 @@ reentry_gem_unlock  macro
                     moveq.w #0,d1                        ; Payload size is 0 bytes
                     bsr send_sync_command_to_sidecart
                 	endm
+; TheHulk diagnostics (SHARED_VARIABLE_NO_INSTALL set): report a file call to the ESP32
+; log, without changing what it does. d3 = 'TR' + GEMDOS opcode, d4 = first long of the
+; arguments, d5 = second long; the data at the address in /1 follows, /2 bytes. With /3
+; = 1: d4 = TOS 4.04 AES variables Falcon mode.w + video type.w, d5 = resolution.w +
+; resolution change flag.w instead of the arguments.
+trace_call          macro
+                    tst.l (GEMDRVEMUL_SHARED_VARIABLES + (SHARED_VARIABLE_NO_INSTALL * 4))
+                    beq .\@trace_skip
+                    move.l a0, -(sp)
+                    move.l \1, a4
+                    moveq #0, d3
+                    move.w 6(a0), d3
+                    or.l #$54520000, d3
+                    move.l 8(a0), d4
+                    move.l 12(a0), d5
+                    ifne \3
+                    move.w ($a4ea).l, d4
+                    swap d4
+                    move.w ($f85e).l, d4
+                    move.w ($8f9e).l, d5
+                    swap d5
+                    move.w ($8fa0).l, d5
+                    endif
+                    send_write_sync CMD_DEBUG, \2
+                    move.l (sp)+, a0
+.\@trace_skip:
+                    endm
+
 ; Check if the current GEMDOS drive is one of the emulated drives. If not,
 ; exec_old_handler the code, otherwise continue with the code.
 ; Output: d0.w = slot index (0..SIDETNFS_MAX_RUNTIME_DRIVES-1) of the matched drive in
@@ -424,6 +484,43 @@ _ping_ready:
     print ok_msg
     print ready_gemdrive_msg
 
+; TheHulk: from here on the token wait code runs from our own piece of RAM. The file
+; calls of every drive now pass through this code, _dskbufp may hold data of a disk driver.
+    move.l #CODE_BUFFER_SIZE + HOOK_STACK_SIZE, -(sp)
+    gemdos Malloc, 6
+    tst.l d0
+    ble.s .code_buffer_done
+    move.l d0, -(sp)
+    move.l d0, d4
+    move.l #SHARED_VARIABLE_CODE_BUFFER, d3
+    send_sync CMD_SET_SHARED_VAR, 8
+    move.l (sp)+, d4
+    add.l #CODE_BUFFER_SIZE + HOOK_STACK_SIZE, d4
+    move.l #SHARED_VARIABLE_HOOK_STACK, d3
+    send_sync CMD_SET_SHARED_VAR, 8
+.code_buffer_done:
+
+; TheHulk: hand the processor state saved by the last crash (bombs) to the ESP32 log:
+; the TOS proc_lives area $380-$3FF, which survives a warm reset
+    lea $380.w, a4
+    move.l a4, d3                        ; d3 = address of the data, tells the ESP32 what it is
+    send_write_sync CMD_DEBUG, 128
+
+; TheHulk diagnostics, only when the ESP32 asks for it: the TOS ROM ($E00000-$E7FFFF)
+; to the ESP32 log, in blocks of 2 KB
+    tst.l (GEMDRVEMUL_SHARED_VARIABLES + (SHARED_VARIABLE_DUMP_TOS * 4))
+    beq .dump_tos_done
+    move.l #$e00000, d3
+.dump_tos_loop:
+    move.l d3, -(sp)
+    move.l d3, a4
+    send_write_sync CMD_DEBUG, 2048
+    move.l (sp)+, d3
+    add.l #2048, d3
+    cmp.l #$e80000, d3
+    bne .dump_tos_loop
+.dump_tos_done:
+
 ; Clean GEM reentry lock on start
 ; This is necessary in case there was a crash during a reentry call
     bsr clean_gem_reentry_lock
@@ -461,7 +558,10 @@ _ping_ready:
     move.l #1,_drvbits.w                                                    ; Create the drive A bit
     move.w #1,_nflops.w                                                     ; Simulate that floppy A is attached
 .create_virtual_hard_disk:
+    tst.l (GEMDRVEMUL_SHARED_VARIABLES + (SHARED_VARIABLE_NO_INSTALL * 4))
+    bne.s .no_virtual_hard_disk
     bsr create_virtual_hard_disk
+.no_virtual_hard_disk:
 
 
 ; Save the old GEMDRVEMUL_OLD_GEM_VEC and set our own vector
@@ -469,9 +569,12 @@ _ping_ready:
 
 ; Get the hardware version 
     bsr detect_hw
+    cmp.l #1, (GEMDRVEMUL_SHARED_VARIABLES + (SHARED_VARIABLE_NO_INSTALL * 4))
+    beq.s .no_vectors
     bsr save_vectors
     tst.w d0
     bne _exit_timemout
+.no_vectors:
     print ok_msg
 
 ; This is where the clock is set.
@@ -787,6 +890,7 @@ _xbios_not_user_mode:
 _xbios_user_mode:
     move.l usp,a0                    ; if user mode, correct stack pointer
     subq.l #6,a0
+    bra.s _xbios_notlong             ; the arguments are on the user stack: no exception frame
 ;
 ; This code checks if the CPU is a 68000 or not
 ;
@@ -937,8 +1041,13 @@ create_virtual_hard_disk:
 .create_virtual_hard_disk_done:
     move.l d3, _drvbits.w
 
+    ; Only when asked for: with a hard disk (e.g. the Falcon's IDE drive as C:) the
+    ; Atari must keep booting from it, its desktop settings and AUTO folder included
+    tst.l (GEMDRVEMUL_SHARED_VARIABLES + (SHARED_VARIABLE_SET_CURRENT_DRIVE * 4))
+    beq.s .create_virtual_hard_disk_exit
     move.w (GEMDRVEMUL_SHARED_VARIABLES + 2 + (SHARED_VARIABLE_DRIVE_NUMBER_TABLE * 4)), -(sp)  ; Slot 0 becomes the current/default drive
     gemdos Dsetdrv, 4                    ; Call Dsetdrv() and set the emulated drive
+.create_virtual_hard_disk_exit:
     movem.l (sp)+, d1-d3/a5
     rts
 
@@ -1192,6 +1301,7 @@ _not_user_mode:
 _user_mode:
     move.l usp,a0                          ; if user mode, correct stack pointer
     subq.l #6,a0
+    bra.s _notlong                         ; the arguments are on the user stack: no exception frame
 ;
 ; This code checks if the CPU is a 68000 or not
 ;
@@ -1349,6 +1459,7 @@ _notlong:
 
 
 .Dsetpath:
+    trace_call 8(a0), 64, 1
     move.l 8(a0),a4                      ; Address to the new GEMDOS path
 
     detect_emulated_drive_letter         ; If not, exec_old_handler the code. Otherwise continue with the code.
@@ -1404,6 +1515,7 @@ _notlong:
     return_rte
 
 .Fopen:
+    trace_call 8(a0), 64, 1
     move.l 8(a0),a4                      ; get the fpname address
     move.w 12(a0),d3                     ; get mode attribute
 
@@ -1423,6 +1535,7 @@ _notlong:
     return_interrupt_l GEMDRVEMUL_FOPEN_HANDLE    ; Return the error code from the Sidecart
 
 .Fclose:
+    trace_call (GEMDRVEMUL_SHARED_VARIABLES + (SHARED_VARIABLE_TRACE_BUFFER * 4)), 512, 0
     move.w 8(a0),d3                      ; get the file handle
     and.l #$FFFF, d3                     ; Mask the upper word of the file handle
 
@@ -1566,6 +1679,7 @@ _notlong:
     return_interrupt_l GEMDRVEMUL_FDATETIME_STATUS    ; Return the error code from the Sidecart
 
 .Fread:
+    trace_call a0, 20, 0                 ; The frame: the buffer address is at 14(a0)
     move.w 8(a0),d3                      ; get the file handle
     move.l 10(a0),d4                     ; get number of bytes to read
     move.l 14(a0),a4                     ; get address of buffer to read into
@@ -1798,6 +1912,7 @@ _notlong:
 
 
 .Fsfirst:
+    trace_call 8(a0), 64, 1
     move.l 8(a0), a4                     ; Get the address of the file specification string
     move.w 12(a0),d4                     ; get attribs
 
@@ -2143,9 +2258,11 @@ _notlong:
 ; Trap the exit of the classic PE_GO call
     move.l #SHARED_VARIABLE_PEXEC_RESTORE, d3
     ; See the definition of STACK_SIZE_HACK_PEXEC to understand its size
-    move.l STACK_SIZE_HACK_PEXEC(sp),d4  ; Store the return address in the shared variable PEXEC_RESTORE
+    move.l STACK_SIZE_HACK_PEXEC(sp),a1  ; The frame on the stack of the caller
+    move.l 2(a1),d4                      ; Store the return address in the shared variable PEXEC_RESTORE
     send_sync CMD_SET_SHARED_VAR, 8      ; Send the command to the Sidecart. 8 bytes of payload
-    move.l #.pexec_mshrink_exit, STACK_SIZE_HACK_PEXEC(sp)  ; Trap the exit of the PE_GO before exiting to release memory
+    move.l STACK_SIZE_HACK_PEXEC(sp),a1
+    move.l #.pexec_mshrink_exit, 2(a1)   ; Trap the exit of the PE_GO before exiting to release memory
 
     move.l GEMDRVEMUL_PEXEC_STACK_ADDR, a0  ; We need to set again the a0 register
     move.w #PE_GO, 8(a0)                    ; overwrite the mode with PE_GO

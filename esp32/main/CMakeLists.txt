@@ -14,5 +14,43 @@ set(HULK_ROM_IMAGE "${CMAKE_CURRENT_LIST_DIR}/../../atari/gemdrive/dist/GEMDRIVE
 if(NOT EXISTS "${HULK_ROM_IMAGE}")
     message(FATAL_ERROR "Cartridge image not found: ${HULK_ROM_IMAGE}\nRun ./build.sh (builds atari/gemdrive) first.")
 endif()
+# Diagnostics: configure the FPGA but never enable the cartridge. The board stays in the
+# Atari, which then starts as without a cartridge.
+option(HULK_CART_OFF "Never enable the cartridge" OFF)
+if(HULK_CART_OFF)
+    target_compile_definitions(${COMPONENT_TARGET} PRIVATE HULK_CART_OFF)
+endif()
+
+# Diagnostics: behave as a plain read-only cartridge, whatever HULK_ROM_IMAGE holds:
+# no GEMDRIVE shared memory and no answers to commands.
+option(HULK_CART_READONLY "Plain read-only cartridge" OFF)
+if(HULK_CART_READONLY)
+    target_compile_definitions(${COMPONENT_TARGET} PRIVATE HULK_CART_READONLY)
+endif()
+
+# Diagnostics: GEMDRIVE starts at boot like always, but returns at once: nothing on the
+# screen, no commands, no GEMDOS hook and no drive.
+option(HULK_GEMDRIVE_OFF "GEMDRIVE does not install itself" OFF)
+if(HULK_GEMDRIVE_OFF)
+    target_compile_definitions(${COMPONENT_TARGET} PRIVATE HULK_GEMDRIVE_OFF)
+endif()
+
+# Diagnostics: upload the whole image before the cartridge is enabled
+option(HULK_UPLOAD_ALL "Upload the whole image before enabling" OFF)
+if(HULK_UPLOAD_ALL)
+    target_compile_definitions(${COMPONENT_TARGET} PRIVATE HULK_UPLOAD_ALL)
+endif()
+
+# Diagnostics: 1 = GEMDRIVE boots and sends its commands, but installs no drive and no
+# GEMDOS hook; 2 = it installs the hook, but no drive
+set(HULK_GEMDRIVE_NO_INSTALL 0 CACHE STRING "GEMDRIVE install level")
+target_compile_definitions(${COMPONENT_TARGET} PRIVATE HULK_GEMDRIVE_NO_INSTALL=${HULK_GEMDRIVE_NO_INSTALL})
+
+# Diagnostics: GEMDRIVE sends the TOS 4 ROM to the ESP32 log
+option(HULK_TOS_DUMP "Dump the TOS 4 ROM to the log" OFF)
+if(HULK_TOS_DUMP)
+    target_compile_definitions(${COMPONENT_TARGET} PRIVATE TOS_DUMP=1)
+endif()
+
 configure_file("${HULK_ROM_IMAGE}" "${CMAKE_CURRENT_BINARY_DIR}/rom.img" COPYONLY)
 target_add_binary_data(${COMPONENT_TARGET} "${CMAKE_CURRENT_BINARY_DIR}/rom.img" BINARY)

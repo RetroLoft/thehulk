@@ -12,10 +12,12 @@
 //
 // The cartridge is enabled ~0.3 s after the Atari is switched on; TOS 1.04 on an ST
 // without hard disk reads the cartridge first after ~0.67 s (fastest case measured).
+#include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "freertos/stream_buffer.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "esp_system.h"
@@ -36,6 +38,39 @@ extern const uint8_t rom_start[]       asm("_binary_rom_img_start");
 extern const uint8_t rom_end[]         asm("_binary_rom_img_end");
 
 static bootrec_t s_rec;
+
+// The log goes through a buffer to a task on the second core: a UART line takes
+// ~9 ms, and GEMDRIVE waits for the answer to each command (on a Falcon it gives up
+// after ~1.4 s by default). Lines that do not fit are dropped, never waited for.
+static StreamBufferHandle_t s_log_buf;
+
+static int log_vprintf(const char *fmt, va_list args)
+{
+    char line[256];
+    int len = vsnprintf(line, sizeof(line), fmt, args);
+    if (len > (int)sizeof(line) - 1)
+        len = sizeof(line) - 1;
+    if (len > 0)
+        xStreamBufferSend(s_log_buf, line, len, 0);
+    return len;
+}
+
+static void log_task(void *arg)
+{
+    char buf[256];
+    for (;;) {
+        size_t n = xStreamBufferReceive(s_log_buf, buf, sizeof(buf), portMAX_DELAY);
+        fwrite(buf, 1, n, stdout);
+        fflush(stdout);
+    }
+}
+
+static void log_start(void)
+{
+    s_log_buf = xStreamBufferCreate(32 * 1024, 1);
+    xTaskCreatePinnedToCore(log_task, "log", 3072, NULL, 1, NULL, 1);
+    esp_log_set_vprintf(log_vprintf);
+}
 
 static uint32_t now_ms(void)
 {
@@ -58,27 +93,31 @@ static void handle_packets(void)
         if (hulk_get_packet(&pkt) != ESP_OK)
             return;
         hulk_ack_packet();
+#ifndef HULK_CART_READONLY
         gemdrv_command(&pkt);
         shadow_sync();
+#endif
     }
 }
 
-// Diagnostics: the first 256 ROM3 cycles the gateware saw ({A15..A1, /UDS})
-static bool s_capture_logged;
-
-static void log_capture(const hulk_status_t *st)
+// Diagnostics: the last ROM3 cycles the gateware saw, oldest first, as {A15..A1, decoder
+// waiting for a header}. Logged when the Atari polls for an answer to a packet that
+// never arrived.
+static void log_rom3_ring(void)
 {
     static uint8_t b[512];
-    if (s_capture_logged || st->rom3_count < 256 || hulk_read(0x801000, b, sizeof(b)) != ESP_OK)
+    uint8_t pos[2];
+    if (hulk_read(0x801200, pos, sizeof(pos)) != ESP_OK || hulk_read(0x801000, b, sizeof(b)) != ESP_OK)
         return;
-    s_capture_logged = true;
-    ESP_LOGI(TAG, "first ROM3 cycles (address bits 15..1 + /UDS as bit 0):");
+    ESP_LOGW(TAG, "no packet while the Atari polls; last ROM3 cycles:");
     for (int i = 0; i < 256; i += 16) {
         char line[100];
         size_t len = 0;
-        for (int k = 0; k < 16; k++)
-            len += snprintf(line + len, sizeof(line) - len, " %02x%02x", b[2 * (i + k)], b[2 * (i + k) + 1]);
-        ESP_LOGI(TAG, "%3d:%s", i, line);
+        for (int k = 0; k < 16; k++) {
+            int n = (pos[1] + i + k) & 0xFF;
+            len += snprintf(line + len, sizeof(line) - len, " %02x%02x", b[2 * n], b[2 * n + 1]);
+        }
+        ESP_LOGW(TAG, "%3d:%s", i, line);
     }
 }
 
@@ -86,10 +125,11 @@ static void log_capture(const hulk_status_t *st)
 static void start_cartridge(void)
 {
     memset(&s_rec, 0, sizeof(s_rec));
-    s_capture_logged = false;
     shadow_init();
     shadow_load_image(rom_start, rom_len());
+#ifndef HULK_CART_READONLY
     gemdrv_init();
+#endif
     s_rec.reset_reason = esp_reset_reason();
     s_rec.brownouts = bootrec_brownouts();
     s_rec.waited = !fpga_power_present();
@@ -111,8 +151,19 @@ static void start_cartridge(void)
             int version = hulk_probe();
             if (version >= 0) {
                 hulk_set_ctrl(0);
-                shadow_write_range(0, rom_len());      // the image first: boot path
+                // The start of the image first: boot path (a 128 KB upload takes 263 ms,
+                // TOS reads the header ~0.5 s after power-on)
+                size_t done = (rom_len() + 1) & ~1u;
+#ifndef HULK_UPLOAD_ALL
+                if (done > 0x4000)
+                    done = 0x4000;
+#endif
+                shadow_write_range(0, done);
+#ifdef HULK_CART_OFF
+                ESP_LOGW(TAG, "diagnostics build: cartridge stays disabled");
+#else
                 hulk_set_ctrl(HULK_CTRL_ROM_EN);
+#endif
                 s_rec.t_enabled = now_ms();
                 hulk_status_t st;
                 if (hulk_get_status(&st) == ESP_OK) {
@@ -120,7 +171,6 @@ static void start_cartridge(void)
                     s_rec.early = st.early_count;
                 }
                 // Then the rest, GEMDRIVE reads its shared memory ~2 s after power-on
-                size_t done = (rom_len() + 1) & ~1u;
                 shadow_write_range(done, HULK_ROM_SIZE - done);
                 ESP_LOGI(TAG, "cartridge enabled (gateware v%d, image %u bytes, %lu ms)",
                          version, (unsigned)rom_len(), (unsigned long)(now_ms() - s_rec.t_enabled));
@@ -142,6 +192,7 @@ void app_main(void)
 {
     // The startup log level is WARN (each UART line costs ~5 ms on the boot path)
     esp_log_level_set("*", ESP_LOG_INFO);
+    log_start();
     bootrec_start();
 
     ESP_ERROR_CHECK(fpga_init());
@@ -164,12 +215,25 @@ void app_main(void)
                 continue;
             if (!s_rec.t_rom3 && st.rom3_count)
                 s_rec.t_rom3 = now_ms();
-            log_capture(&st);
             handle_packets();
             if (!s_rec.t_rom4 && st.rom4_count)
                 s_rec.t_rom4 = now_ms();
             if (!s_rec.t_init && st.rom4_count > 32)
                 s_rec.t_init = now_ms();
+        }
+        // The verify and the NVS write hold up the command answers: wait until the
+        // Atari has sent no command for 0.5 s (at most 30 s)
+        uint32_t t_quiet = now_ms(), t_wait = now_ms();
+        uint16_t pkts = 0;
+        while (fpga_power_present() && fpga_done() && now_ms() - t_quiet < 500 &&
+               now_ms() - t_wait < 30000) {
+            hulk_status_t st;
+            vTaskDelay(1);
+            handle_packets();
+            if (hulk_get_status(&st) == ESP_OK && st.pkt_count != pkts) {
+                pkts = st.pkt_count;
+                t_quiet = now_ms();
+            }
         }
         if (fpga_power_present() && fpga_done()) {
             int errors = shadow_verify();
@@ -187,13 +251,28 @@ void app_main(void)
         // Watch until the Atari is switched off
         hulk_status_t prev = { 0 }, st;
         int64_t last_log = 0;
+        uint16_t lost_count = 0;
+        uint32_t lost_rom3 = 0;
+        int64_t lost_time = 0;
+        bool lost_logged = false;
         while (fpga_power_present() && fpga_done()) {
             vTaskDelay(1);
             handle_packets();
             if (hulk_get_status(&st) != ESP_OK)
                 continue;
-            log_capture(&st);
             int64_t now = esp_timer_get_time();
+            // Half a second of token polling (~1 M reads) without a new packet
+            if (st.pkt_count != lost_count) {
+                lost_count = st.pkt_count;
+                lost_rom3 = st.rom3_count;
+                lost_logged = false;
+            } else if (!lost_logged && st.rom3_count - lost_rom3 > 1000000) {
+                lost_logged = true;
+                log_rom3_ring();
+            } else if (st.rom3_count - lost_rom3 <= 1000000 && now - lost_time > 2000000) {
+                lost_time = now;
+                lost_rom3 = st.rom3_count;
+            }
             if ((st.rom4_count != prev.rom4_count || st.rom3_count != prev.rom3_count) &&
                 now - last_log > 1000000) {
                 last_log = now;

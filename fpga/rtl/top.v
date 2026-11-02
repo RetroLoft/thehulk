@@ -214,7 +214,6 @@ module top (
 
     // The address is stable for several clocks before rom3_start, so the comparisons
     // are registered a clock ahead (timing)
-    wire [15:0] rom3_word = {a_q, uds_q};      // A0 from /UDS: ST only (capture)
     wire [7:0]  rom3_byte = a_q[7:0];          // A8..A1
     wire [15:0] p_word    = {p_high, rom3_byte};
     reg         hdr_match;
@@ -229,22 +228,30 @@ module top (
     reg         st_header;         // waiting for a header (or the packet timed out)
     reg         st_low, st_cmd, st_size;
 
-    // Diagnostics: the first 256 ROM3 cycles after the cartridge was enabled, as the
-    // decoder sees them ({A15..A1, /UDS}). Read at packet buffer word 0x800.
+    // Diagnostics: a ring of the last 256 ROM3 cycles as {A15..A1, decoder waiting for a
+    // header}, without the polling of the token (a run of 0xFB0000/2 counts as one).
+    // Read at packet buffer word 0x800, the write position at word 0x900.
     reg [15:0] cap_mem [0:255];
-    reg [8:0]  cap_n = 0;
+    reg [7:0]  cap_n = 0;
+    reg        cap_poll = 1'b0;
     reg [15:0] pkt_q, cap_q;
-    reg        rd_cap;
+    reg        rd_cap, rd_cap_n;
+    wire       a_is_poll = a_q[14:1] == 14'd0;
 
     always @(posedge clk) begin
-        if (!rom_enable)
-            cap_n <= 0;
-        else if (rom3_start && !cap_n[8]) begin
-            cap_mem[cap_n[7:0]] <= rom3_word;
-            cap_n <= cap_n + 1'b1;
+        if (!rom_enable) begin
+            cap_n    <= 0;
+            cap_poll <= 1'b0;
+        end else if (rom3_start) begin
+            cap_poll <= a_is_poll;
+            if (!(a_is_poll && cap_poll)) begin
+                cap_mem[cap_n] <= {a_q, st_header};
+                cap_n <= cap_n + 1'b1;
+            end
         end
-        cap_q  <= cap_mem[rd_addr[7:0]];
-        rd_cap <= rd_addr[11];
+        cap_q    <= cap_mem[rd_addr[7:0]];
+        rd_cap   <= rd_addr[11];
+        rd_cap_n <= rd_addr[8];
     end
 
     always @(posedge clk) begin
@@ -254,7 +261,7 @@ module top (
     end
 
     always @*
-        pkt_rdata = rd_cap ? cap_q : pkt_q;
+        pkt_rdata = !rd_cap ? pkt_q : rd_cap_n ? {8'd0, cap_n} : cap_q;
 
     always @(posedge clk) begin
         p_we      <= 1'b0;

@@ -90,7 +90,10 @@ send_sync_command_to_sidecart:
 
     tst.l (GEMDRVEMUL_SHARED_VARIABLES + (SHARED_VARIABLE_BUFFER_TYPE * 4))
     bne.s .send_sync_command_to_sidecart_use_stack_buffer
-    move.l _dskbufp, a2                ; Address of the buffer to send the command
+    move.l (GEMDRVEMUL_SHARED_VARIABLES + (SHARED_VARIABLE_CODE_BUFFER * 4)), a2 ; Our own RAM...
+    cmp.w #0, a2
+    bne.s .send_sync_command_to_sidecart_continue
+    move.l _dskbufp, a2                ; ...or the disk buffer early in the boot
     bra.s .send_sync_command_to_sidecart_continue
 .send_sync_command_to_sidecart_use_stack_buffer:
     lea -(_end_sync_code_in_stack - _start_sync_code_in_stack)(sp), sp
@@ -111,6 +114,10 @@ _copy_sync_code:
     addq.w #4, d1                       ; Add 4 bytes to the payload size to include the token
 
 _start_async_code_in_stack:
+    ; TheHulk: no interrupts while the packet goes out. The gateware drops a packet that
+    ; is not complete 10 ms after its header, and the caller would wait for the timeout.
+    move.w sr, -(sp)
+    or.w #$0700, sr
     move.l #ROM3_START_ADDR, a0 ; Start address of the ROM3
 
     ; SEND HEADER WITH MAGIC NUMBER
@@ -173,8 +180,9 @@ _start_async_code_in_stack:
     send_word d6              ; Command payload high d6
 
 _no_more_payload_stack:
+    move.w (sp)+, sr
     swap d2                   ; D2 is the only register that is not used as a scratch register
-    move.l #$000FFFFF, d6     ; Most significant word is the inner loop, least significant word is the outer loop
+    move.l (GEMDRVEMUL_SHARED_VARIABLES + (SHARED_VARIABLE_SYNC_TIMEOUT * 4)), d6 ; Polls of the token before the timeout, set by the ESP32
     moveq #0, d0              ; Timeout
     jmp (a3)                  ; Jump to the code in the stack
 ; This is the code that cannot run in ROM while waiting for the command to complete
@@ -225,7 +233,10 @@ send_sync_write_command_to_sidecart:
 
     tst.l (GEMDRVEMUL_SHARED_VARIABLES + (SHARED_VARIABLE_BUFFER_TYPE * 4))
     bne.s .send_sync_write_command_to_sidecart_use_stack_buffer
-    move.l _dskbufp, a2                ; Address of the buffer to send the command
+    move.l (GEMDRVEMUL_SHARED_VARIABLES + (SHARED_VARIABLE_CODE_BUFFER * 4)), a2 ; Our own RAM...
+    cmp.w #0, a2
+    bne.s .send_sync_write_command_to_sidecart_continue
+    move.l _dskbufp, a2                ; ...or the disk buffer early in the boot
     bra.s .send_sync_write_command_to_sidecart_continue
 .send_sync_write_command_to_sidecart_use_stack_buffer:
     lea -(_end_sync_write_code_in_stack - _start_sync_write_code_in_stack)(sp), sp
@@ -255,6 +266,8 @@ _copy_write_sync_code:
     lsl.w #1, d1                        ; Multiply by 2 because we are sending two bytes each iteration
 
 _start_async_write_code_in_stack:   
+    move.w sr, -(sp)            ; TheHulk: no interrupts while the packet goes out, see above
+    or.w #$0700, sr
     move.l #ROM3_START_ADDR, a0 ; We have to keep in A0 the address of the ROM3 because we need to read from it
 
     ; SEND HEADER WITH MAGIC NUMBER
@@ -352,8 +365,9 @@ _write_to_sidecart_odd_loop2:
 
 _write_to_sidecart_end_loop:
     ; End of the command loop. Now we need to wait for the token
+    move.w (sp)+, sr
     swap d2                   ; D2 is the only register that is not used as a scratch register
-    move.l #$000FFFFF, d6     ; Most significant word is the inner loop, least significant word is the outer loop
+    move.l (GEMDRVEMUL_SHARED_VARIABLES + (SHARED_VARIABLE_SYNC_TIMEOUT * 4)), d6 ; Polls of the token before the timeout, set by the ESP32
     moveq #0, d0              ; Timeout
     jmp (a3)                  ; Jump to the code in the stack
 
