@@ -104,7 +104,7 @@ ROM_EXCHG_BUFFER_ADDR   equ (ROM3_START_ADDR)               ; ROM4 buffer addres
 RANDOM_TOKEN_ADDR:      equ (ROM_EXCHG_BUFFER_ADDR)
 RANDOM_TOKEN_SEED_ADDR: equ (RANDOM_TOKEN_ADDR + 4) ; RANDOM_TOKEN_ADDR + 0 bytes
 CODE_BUFFER_SIZE:       equ 64        ; Bytes of RAM for the token wait code
-HOOK_STACK_SIZE:        equ 1024      ; Bytes of RAM for the stack of the GEMDOS hook
+HOOK_STACK_SIZE:        equ 2048      ; Bytes of RAM for the stack of the GEMDOS hook, also holds its temporary data
 RANDOM_TOKEN_POST_WAIT: equ $1        ; Wait this cycles after the random number generator is ready
 
 CMD_MAGIC_NUMBER        equ (ROM3_START_ADDR + $ABCD)       ; Magic number to identify a command
@@ -188,7 +188,7 @@ SHARED_VARIABLE_DRIVE_NUMBER_TABLE      equ SHARED_VARIABLE_SHARED_FUNCTIONS_SIZ
 SHARED_VARIABLE_SET_CURRENT_DRIVE       equ SHARED_VARIABLE_SHARED_FUNCTIONS_SIZE + 16            ; TheHulk: non-zero = make slot 0 the current drive at boot (boot from the cartridge drive)
 SHARED_VARIABLE_DUMP_TOS                equ SHARED_VARIABLE_SHARED_FUNCTIONS_SIZE + 17            ; TheHulk: non-zero = send the TOS ROM to the ESP32 at boot (diagnostics)
 SHARED_VARIABLE_SYNC_TIMEOUT            equ SHARED_VARIABLE_SHARED_FUNCTIONS_SIZE + 18            ; TheHulk: polls of the token before a command times out (higher on a 68030, it polls faster)
-SHARED_VARIABLE_NO_INSTALL              equ SHARED_VARIABLE_SHARED_FUNCTIONS_SIZE + 19            ; TheHulk diagnostics: 1 = boot and send the commands, but install no drive and no GEMDOS hook; 2 = install the hook, but no drive
+SHARED_VARIABLE_NO_INSTALL              equ SHARED_VARIABLE_SHARED_FUNCTIONS_SIZE + 19            ; TheHulk diagnostics: 1 = boot and send the commands, but install no drive and no GEMDOS hook; 2 = install the hook, but no drive; 3 = install everything; all three report the file calls (trace_call)
 SHARED_VARIABLE_CODE_BUFFER             equ SHARED_VARIABLE_SHARED_FUNCTIONS_SIZE + 20            ; TheHulk: RAM for the token wait code, not _dskbufp: disk drivers use that buffer (0 = not allocated yet)
 SHARED_VARIABLE_TRACE_BUFFER            equ SHARED_VARIABLE_SHARED_FUNCTIONS_SIZE + 21            ; TheHulk diagnostics: buffer of the last Fread, set by the ESP32
 SHARED_VARIABLE_HOOK_STACK              equ SHARED_VARIABLE_SHARED_FUNCTIONS_SIZE + 22            ; TheHulk: top of our own stack for the GEMDOS hook (0 = not allocated)
@@ -558,8 +558,11 @@ _ping_ready:
     move.l #1,_drvbits.w                                                    ; Create the drive A bit
     move.w #1,_nflops.w                                                     ; Simulate that floppy A is attached
 .create_virtual_hard_disk:
-    tst.l (GEMDRVEMUL_SHARED_VARIABLES + (SHARED_VARIABLE_NO_INSTALL * 4))
+    move.l (GEMDRVEMUL_SHARED_VARIABLES + (SHARED_VARIABLE_NO_INSTALL * 4)), d0
+    beq.s .install_virtual_hard_disk
+    cmp.l #3, d0
     bne.s .no_virtual_hard_disk
+.install_virtual_hard_disk:
     bsr create_virtual_hard_disk
 .no_virtual_hard_disk:
 
@@ -1416,7 +1419,7 @@ _notlong:
     tst.l d0                             ; Check if the call was successful
     bne.s .Dfree_exit                    ; If not, exit with the error code
     ; Copy here to the DISKINFO structure pointed by a4
-    move.l GEMDRVEMUL_DFREE_STRUCT, a5   ; Address of the structure where the result is stored
+    lea GEMDRVEMUL_DFREE_STRUCT, a5      ; Address of the structure where the result is stored
     move.l (a5)+, (a4)+                  ; Copy the total number of free clusters
     move.l (a5)+, (a4)+                  ; Copy the number of clusters per drive
     move.l (a5)+, (a4)+                  ; Copy the number of bytes per sector
@@ -1699,7 +1702,7 @@ _notlong:
     move.l d4, d5                        ; Save the number of bytes to read in d5
     clr.l  d6                            ; d6 is the bytes read counter
 .fread_loop:
-    tst.l (GEMDRVEMUL_SHARED_VARIABLES + (SHARED_VARIABLE_BUFFER_TYPE * 4))
+    tst.l (GEMDRVEMUL_SHARED_VARIABLES + (SHARED_VARIABLE_HOOK_STACK * 4))
     bne.s .fread_loop_use_stack_buffer
     move.l _dskbufp, a5               ; Address of the buffer to read the data from the Sidecart
     movem.l d3-d7, DSKBUFP_TMP_ADDR(a5) ; Save the registers
@@ -1837,7 +1840,7 @@ _notlong:
     moveq.l #GEMDOS_EINTRN, d0           ; Error code. GEMDOS_EINTRN is the error code for the internal error
     bra .fwrite_exit                   ; Exit the loop
 .fwrite_loop_retry_start:                ; Start the loop to retry to send the data
-    tst.l (GEMDRVEMUL_SHARED_VARIABLES + (SHARED_VARIABLE_BUFFER_TYPE * 4))
+    tst.l (GEMDRVEMUL_SHARED_VARIABLES + (SHARED_VARIABLE_HOOK_STACK * 4))
     bne.s .fwrite_loop_use_stack_buffer
     move.l _dskbufp, a5                    ; Address of the buffer to read the data from the Sidecart
     movem.l d3-d7/a4, DSKBUFP_TMP_ADDR(a5) ; Save the registers
@@ -1870,7 +1873,7 @@ _notlong:
 
 .fwrite_check_crc_exit:
     add.l d2, a4
-    tst.l (GEMDRVEMUL_SHARED_VARIABLES + (SHARED_VARIABLE_BUFFER_TYPE * 4))
+    tst.l (GEMDRVEMUL_SHARED_VARIABLES + (SHARED_VARIABLE_HOOK_STACK * 4))
     bne.s .fwrite_check_use_stack_buffer
     move.l _dskbufp, a5                    ; Address of the buffer to read the data from the Sidecart
     movem.l d3-d7/a4, DSKBUFP_TMP_ADDR(a5) ; Save the registers
@@ -2081,7 +2084,7 @@ _notlong:
 ;        move.l (sp)+, a4                     ; Restore the address of the buffer to read
 ;    endif
 
-    tst.l (GEMDRVEMUL_SHARED_VARIABLES + (SHARED_VARIABLE_BUFFER_TYPE * 4))
+    tst.l (GEMDRVEMUL_SHARED_VARIABLES + (SHARED_VARIABLE_HOOK_STACK * 4))
     bne.s .pexec_load_header_use_stack_buffer
     move.l _dskbufp, a4                  ; Address of the buffer to read the data from the Sidecart
     lea DSKBUFP_SWAP_ADDR(a4), a4        ; This is the swap area
@@ -2111,7 +2114,7 @@ _notlong:
 ;        add.l #PRG_STRUCT_SIZE,sp            ; restore the stack pointer
 ;    endif
 
-    tst.l (GEMDRVEMUL_SHARED_VARIABLES + (SHARED_VARIABLE_BUFFER_TYPE * 4))
+    tst.l (GEMDRVEMUL_SHARED_VARIABLES + (SHARED_VARIABLE_HOOK_STACK * 4))
     beq.s .pexec_load_header_not_restore_stack
     add.l #PRG_STRUCT_SIZE,sp            ; restore the stack pointer
 
@@ -2304,7 +2307,7 @@ _notlong:
 ;        add.l #PRG_STRUCT_SIZE,sp            ; restore the stack pointer
 ;    endif
 
-    tst.l (GEMDRVEMUL_SHARED_VARIABLES + (SHARED_VARIABLE_BUFFER_TYPE * 4))
+    tst.l (GEMDRVEMUL_SHARED_VARIABLES + (SHARED_VARIABLE_HOOK_STACK * 4))
     beq.s .pexec_close_exit_fix_hdr_buf_not_restore_stack
     add.l #PRG_STRUCT_SIZE,sp            ; restore the stack pointer
 
@@ -2372,7 +2375,7 @@ stack_buffer_msg:
         dc.b	"[..] Using stack as temp buffer...",0
 
 dskbuf_buffer_msg:
-        dc.b	"[..] Using _dskbuf as temp buffer...",0
+        dc.b	"[..] Using own RAM as temp buffer...",0
 
 query_ping_msg:
         dc.b	"[..] Mounting microSD card...",0

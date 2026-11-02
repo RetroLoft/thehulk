@@ -42,7 +42,8 @@ if(HULK_UPLOAD_ALL)
 endif()
 
 # Diagnostics: 1 = GEMDRIVE boots and sends its commands, but installs no drive and no
-# GEMDOS hook; 2 = it installs the hook, but no drive
+# GEMDOS hook; 2 = it installs the hook, but no drive; 3 = it installs everything. All three
+# log the commands and file calls.
 set(HULK_GEMDRIVE_NO_INSTALL 0 CACHE STRING "GEMDRIVE install level")
 target_compile_definitions(${COMPONENT_TARGET} PRIVATE HULK_GEMDRIVE_NO_INSTALL=${HULK_GEMDRIVE_NO_INSTALL})
 

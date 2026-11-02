@@ -449,9 +449,13 @@ void gemdrv_command(const hulk_packet_t *pkt)
         break;
     }
     case GEMDRVEMUL_DFREE_CALL:
-        // GEMDRIVE copies the result from the address held in DFREE_STRUCT (a
-        // move.l where a lea was meant), so report an error until that is sorted out
-        WRITE_AND_SWAP_LONGWORD(m, GEMDRVEMUL_DFREE_STATUS, (uint32_t)GEMDOS_ERROR);
+        // An empty, full drive: free clusters, total clusters, bytes per sector,
+        // sectors per cluster
+        WRITE_AND_SWAP_LONGWORD(m, GEMDRVEMUL_DFREE_STRUCT, 0);
+        WRITE_AND_SWAP_LONGWORD(m, GEMDRVEMUL_DFREE_STRUCT + 4, 1);
+        WRITE_AND_SWAP_LONGWORD(m, GEMDRVEMUL_DFREE_STRUCT + 8, 512);
+        WRITE_AND_SWAP_LONGWORD(m, GEMDRVEMUL_DFREE_STRUCT + 12, 2);
+        WRITE_AND_SWAP_LONGWORD(m, GEMDRVEMUL_DFREE_STATUS, 0);
         break;
 
     case GEMDRVEMUL_DCREATE_CALL:
