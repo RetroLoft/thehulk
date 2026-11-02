@@ -30,6 +30,7 @@
 #define GEMDRVEMUL_READ_BYTES                       0x00104
 #define GEMDRVEMUL_READ_BUFF                        0x00108     // 16 KB
 #define GEMDRVEMUL_READ_BUFF_SIZE                   16384       // BUFFER_READ_SIZE in gemdrive.s
+#define GEMDRVEMUL_WRITE_BUFF_SIZE                  2048        // BUFFER_WRITE_SIZE in gemdrive.s
 #define GEMDRVEMUL_WRITE_BYTES                      0x04108
 #define GEMDRVEMUL_WRITE_CHK                        0x0410c
 #define GEMDRVEMUL_WRITE_CONFIRM_STATUS             0x04110
@@ -131,6 +132,7 @@
 #define GEMDOS_EIHNDL   -37     // invalid handle
 #define GEMDOS_ENHNDL   -35     // no handles left
 #define GEMDOS_EINVFN   -32     // invalid function
+#define GEMDOS_ENSAME   -48     // not the same drive
 #define GEMDOS_ENMFIL   -49     // no more files
 
 #define FIRST_FILE_DESCRIPTOR                   16384
@@ -194,6 +196,12 @@
 
 // Pico-style accessors (romemul/include/memfunc.h)
 #define SWAP_LONGWORD(data) ((((uint32_t)(data) << 16) & 0xFFFF0000) | (((uint32_t)(data) >> 16) & 0xFFFF))
+// A long word for the Atari, with its words swapped. A function, so that an argument with a
+// side effect (a call that writes) runs once: SWAP_LONGWORD uses its argument twice.
+static inline void write_and_swap_longword(uintptr_t address, uint32_t offset, uint32_t data)
+{
+    *((volatile uint32_t *)(address + offset)) = SWAP_LONGWORD(data);
+}
 #define WRITE_AND_SWAP_LONGWORD(address, offset, data) \
-    *((volatile uint32_t *)((address) + (offset))) = SWAP_LONGWORD(data)
+    write_and_swap_longword((uintptr_t)(address), (offset), (uint32_t)(data))
 #define WRITE_WORD(address, offset, data) *((volatile uint16_t *)((address) + (offset))) = (data)

@@ -535,9 +535,11 @@ void gemdrv_command(const hulk_packet_t *pkt)
         break;
     }
     case GEMDRVEMUL_FDATETIME_CALL: {
-        // Flag in d3 (non-zero: set the date, not on a read-only drive), handle in d4
-        uint16_t time = 0, date = 0;
-        int32_t r = payloadPtr[0] ? GEMDOS_EACCDN : fs_fdatime(payloadPtr[2], &time, &date);
+        // Flag in d3 (non-zero: set the date), handle in d4, in d5 the date and time to set.
+        // TNFS cannot set a date: accepted, so copying a file works.
+        uint16_t time = payloadPtr[5], date = payloadPtr[4];
+        int32_t r = payloadPtr[0] ? (fs_writable(payloadPtr[2]) ? GEMDOS_EOK : GEMDOS_EACCDN)
+                                  : fs_fdatime(payloadPtr[2], &time, &date);
         WRITE_AND_SWAP_LONGWORD(m, GEMDRVEMUL_FDATETIME_TIME, time);
         WRITE_AND_SWAP_LONGWORD(m, GEMDRVEMUL_FDATETIME_DATE, date);
         WRITE_AND_SWAP_LONGWORD(m, GEMDRVEMUL_FDATETIME_STATUS, (uint32_t)r);
@@ -586,37 +588,81 @@ void gemdrv_command(const hulk_packet_t *pkt)
         break;
     }
     case GEMDRVEMUL_DFREE_CALL:
-        // Free clusters, total clusters, bytes per sector, sectors per cluster. Read-only,
-        // so nothing is free; counting the clusters of a big card would take too long.
-        WRITE_AND_SWAP_LONGWORD(m, GEMDRVEMUL_DFREE_STRUCT, 0);
-        WRITE_AND_SWAP_LONGWORD(m, GEMDRVEMUL_DFREE_STRUCT + 4, 65535);
+        // Free clusters, total clusters, bytes per sector, sectors per cluster. On a read-only
+        // drive nothing is free; counting the clusters of a big card would take too long.
+    {
+        uint32_t free_clusters = fs_free_clusters(slot_of_drive(payloadPtr[0]));
+        WRITE_AND_SWAP_LONGWORD(m, GEMDRVEMUL_DFREE_STRUCT, free_clusters);
+        WRITE_AND_SWAP_LONGWORD(m, GEMDRVEMUL_DFREE_STRUCT + 4, free_clusters > 65535 ? free_clusters : 65535);
+    }
         WRITE_AND_SWAP_LONGWORD(m, GEMDRVEMUL_DFREE_STRUCT + 8, 512);
         WRITE_AND_SWAP_LONGWORD(m, GEMDRVEMUL_DFREE_STRUCT + 12, 2);
         WRITE_AND_SWAP_LONGWORD(m, GEMDRVEMUL_DFREE_STATUS, 0);
         break;
 
-    // Everything that would change the card
-    case GEMDRVEMUL_DCREATE_CALL:
-        WRITE_WORD(m, GEMDRVEMUL_DCREATE_STATUS, (uint16_t)GEMDOS_EACCDN);
+    // --- What changes a drive: TNFS only, the rest answers EACCDN (gemdrv_fs.c) --------
+    case GEMDRVEMUL_FCREATE_CALL: {
+        char path[256];
+        payload_string(pkt, path, sizeof(path));
+        int32_t r = fs_fcreate(payloadPtr[2], path, payloadPtr[0]);
+        WRITE_WORD(m, GEMDRVEMUL_FCREATE_HANDLE, (uint16_t)r);
+        ESP_LOGI(TAG, "Fcreate \"%s\": %ld", path, (long)r);
         break;
-    case GEMDRVEMUL_DDELETE_CALL:
-        WRITE_WORD(m, GEMDRVEMUL_DDELETE_STATUS, (uint16_t)GEMDOS_EACCDN);
+    }
+    case GEMDRVEMUL_FDELETE_CALL: {
+        char path[256];
+        payload_string(pkt, path, sizeof(path));
+        int16_t r = fs_fdelete(payloadPtr[0], path);
+        WRITE_WORD(m, GEMDRVEMUL_FDELETE_STATUS, (uint16_t)r);
+        ESP_LOGI(TAG, "Fdelete \"%s\": %d", path, r);
         break;
-    case GEMDRVEMUL_FCREATE_CALL:
-        WRITE_WORD(m, GEMDRVEMUL_FCREATE_HANDLE, (uint16_t)GEMDOS_EACCDN);
+    }
+    case GEMDRVEMUL_DCREATE_CALL: {
+        char path[256];
+        payload_string(pkt, path, sizeof(path));
+        WRITE_WORD(m, GEMDRVEMUL_DCREATE_STATUS, (uint16_t)fs_dcreate(payloadPtr[0], path));
         break;
-    case GEMDRVEMUL_FDELETE_CALL:
-        WRITE_WORD(m, GEMDRVEMUL_FDELETE_STATUS, (uint16_t)GEMDOS_EACCDN);
+    }
+    case GEMDRVEMUL_DDELETE_CALL: {
+        char path[256];
+        payload_string(pkt, path, sizeof(path));
+        WRITE_WORD(m, GEMDRVEMUL_DDELETE_STATUS, (uint16_t)fs_ddelete(payloadPtr[0], path));
         break;
-    case GEMDRVEMUL_FRENAME_CALL:
-        WRITE_AND_SWAP_LONGWORD(m, GEMDRVEMUL_FRENAME_STATUS, (uint32_t)GEMDOS_EACCDN);
+    }
+    case GEMDRVEMUL_FRENAME_CALL: {
+        // Slots in d3 and d4; both paths in 128 bytes each
+        char from[128], to[128];
+        payload_field(payloadPtr + 6, from, sizeof(from));
+        payload_field(payloadPtr + 6 + 64, to, sizeof(to));
+        int32_t r = fs_frename(payloadPtr[0], payloadPtr[2], from, to);
+        WRITE_AND_SWAP_LONGWORD(m, GEMDRVEMUL_FRENAME_STATUS, (uint32_t)r);
         break;
-    case GEMDRVEMUL_WRITE_BUFF_CALL:
-        WRITE_AND_SWAP_LONGWORD(m, GEMDRVEMUL_WRITE_BYTES, (uint32_t)GEMDOS_EACCDN);
+    }
+    case GEMDRVEMUL_WRITE_BUFF_CALL: {
+        // Handle in d3, the bytes still to write in d5, then always 2 KB of data. GEMDRIVE
+        // sends again when the checksum (a sum of the words of the whole block) differs,
+        // and moves on with WRITE_BUFF_CHECK.
+        static uint8_t buf[GEMDRVEMUL_WRITE_BUFF_SIZE];
+        const uint16_t *w = payloadPtr + 6;
+        uint32_t pending = ((uint32_t)payloadPtr[5] << 16) | payloadPtr[4];
+        uint32_t len = pending > sizeof(buf) ? sizeof(buf) : pending;
+        uint16_t chk = 0;
+        for (size_t i = 0; i < sizeof(buf) / 2; i++) {
+            buf[2 * i] = w[i] >> 8;
+            buf[2 * i + 1] = w[i] & 0xFF;
+            chk += w[i];
+        }
+        int32_t n = fs_fwrite(payloadPtr[0], buf, len);
+        WRITE_AND_SWAP_LONGWORD(m, GEMDRVEMUL_WRITE_CHK, (uint32_t)chk);
+        WRITE_AND_SWAP_LONGWORD(m, GEMDRVEMUL_WRITE_BYTES, (uint32_t)n);
         break;
-    case GEMDRVEMUL_WRITE_BUFF_CHECK:
-        WRITE_AND_SWAP_LONGWORD(m, GEMDRVEMUL_WRITE_CONFIRM_STATUS, (uint32_t)GEMDOS_EACCDN);
+    }
+    case GEMDRVEMUL_WRITE_BUFF_CHECK: {
+        uint32_t len = ((uint32_t)payloadPtr[3] << 16) | payloadPtr[2];
+        WRITE_AND_SWAP_LONGWORD(m, GEMDRVEMUL_WRITE_CONFIRM_STATUS,
+                                (uint32_t)(int32_t)fs_fwrite_commit(payloadPtr[0], len));
         break;
+    }
 
     // --- The configuration program (atari/config) ------------------------------------
     case GEMDRVEMUL_CONFIG_GET_INFO:

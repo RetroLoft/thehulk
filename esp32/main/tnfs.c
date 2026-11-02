@@ -17,14 +17,22 @@ static const char *TAG = "tnfs";
 #define CMD_READDIRX  0x18
 #define CMD_CLOSEDIR  0x12
 #define CMD_READ      0x21
+#define CMD_WRITE     0x22
 #define CMD_CLOSE     0x23
 #define CMD_STAT      0x24
 #define CMD_LSEEK     0x25
+#define CMD_UNLINK    0x26
+#define CMD_RENAME    0x28
+#define CMD_MKDIR     0x13
+#define CMD_RMDIR     0x14
+#define CMD_FREE      0x31
 #define CMD_OPEN      0x29
 
 #define ST_OK             0x00
 #define ST_EPERM          0x01
 #define ST_ENOENT         0x02
+#define ST_EEXIST         0x11
+#define ST_ENOTEMPTY      0x27
 #define ST_EACCES         0x06
 #define ST_EOF            0x21
 #define ST_BAD_SESSION    0xFF
@@ -63,7 +71,9 @@ static int to_gemdos(uint8_t status)
     switch (status) {
     case ST_ENOENT: return GEMDOS_EFILNF;
     case ST_EPERM:
-    case ST_EACCES: return GEMDOS_EACCDN;
+    case ST_EACCES:
+    case ST_EEXIST:
+    case ST_ENOTEMPTY: return GEMDOS_EACCDN;
     default:        return GEMDOS_ERROR;
     }
 }
@@ -76,7 +86,7 @@ static uint32_t le32(const uint8_t *p)
 // One request and its answer in s_rx: its length, or -1 without an answer
 static int request(slot_t *s, uint8_t cmd, const void *data, size_t len)
 {
-    static uint8_t tx[320];
+    static uint8_t tx[READ_MAX + 64];
     if (s_sock < 0 || len + 4 > sizeof(tx))
         return -1;
     uint8_t seq = ++s_seq;
@@ -84,7 +94,8 @@ static int request(slot_t *s, uint8_t cmd, const void *data, size_t len)
     tx[1] = s->conn >> 8;
     tx[2] = seq;
     tx[3] = cmd;
-    memcpy(tx + 4, data, len);
+    if (len)
+        memcpy(tx + 4, data, len);
     for (int t = 0; t < TRIES; t++) {
         if (sendto(s_sock, tx, len + 4, 0, (struct sockaddr *)&s->addr, sizeof(s->addr)) < 0)
             return -1;
@@ -232,15 +243,15 @@ void tnfs_dir_close(int slot, uint8_t handle)
     call(slot, CMD_CLOSEDIR, &handle, 1);
 }
 
-int tnfs_file_open(int slot, const char *path, uint8_t *handle)
+int tnfs_file_open(int slot, const char *path, uint16_t flags, uint8_t *handle)
 {
     uint8_t req[4 + 256];
     size_t pl = strlen(path);
     if (pl >= 256)
         return GEMDOS_EFILNF;
-    req[0] = 1;                     // O_RDONLY
-    req[1] = 0;
-    req[2] = 0xA4;                  // mode 0644, unused without O_CREAT
+    req[0] = flags & 0xFF;
+    req[1] = flags >> 8;
+    req[2] = 0xA4;                  // mode 0644, only used with O_CREAT
     req[3] = 0x01;
     memcpy(req + 4, path, pl + 1);
     int n = call(slot, CMD_OPEN, req, 4 + pl + 1);
@@ -274,6 +285,29 @@ int tnfs_file_read(int slot, uint8_t handle, uint8_t *buf, uint32_t len)
     return done;
 }
 
+int tnfs_file_write(int slot, uint8_t handle, const uint8_t *buf, uint32_t len)
+{
+    static uint8_t req[3 + READ_MAX];
+    uint32_t done = 0;
+    while (done < len) {
+        uint32_t want = len - done > READ_MAX ? READ_MAX : len - done;
+        req[0] = handle;
+        req[1] = want & 0xFF;
+        req[2] = want >> 8;
+        memcpy(req + 3, buf + done, want);
+        int n = call(slot, CMD_WRITE, req, 3 + want);
+        if (n < 0)
+            return done ? (int)done : GEMDOS_ERROR;
+        if (s_rx[4] != ST_OK || n < 7)
+            return done ? (int)done : to_gemdos(s_rx[4]);
+        uint32_t put = s_rx[5] | (s_rx[6] << 8);
+        if (!put)
+            break;
+        done += put;
+    }
+    return done;
+}
+
 int tnfs_file_seek(int slot, uint8_t handle, uint32_t pos)
 {
     uint8_t req[6] = { handle, 0, pos & 0xFF, (pos >> 8) & 0xFF, (pos >> 16) & 0xFF, pos >> 24 };
@@ -286,4 +320,49 @@ int tnfs_file_seek(int slot, uint8_t handle, uint32_t pos)
 void tnfs_file_close(int slot, uint8_t handle)
 {
     call(slot, CMD_CLOSE, &handle, 1);
+}
+
+static int path_call(int slot, uint8_t cmd, const char *path)
+{
+    int n = call(slot, cmd, path, strlen(path) + 1);
+    if (n < 0)
+        return GEMDOS_ERROR;
+    return s_rx[4] == ST_OK ? 0 : to_gemdos(s_rx[4]);
+}
+
+int tnfs_unlink(int slot, const char *path)
+{
+    return path_call(slot, CMD_UNLINK, path);
+}
+
+int tnfs_mkdir(int slot, const char *path)
+{
+    return path_call(slot, CMD_MKDIR, path);
+}
+
+int tnfs_rmdir(int slot, const char *path)
+{
+    return path_call(slot, CMD_RMDIR, path);
+}
+
+int tnfs_rename(int slot, const char *from, const char *to)
+{
+    uint8_t req[2 * 256];
+    size_t a = strlen(from) + 1, b = strlen(to) + 1;
+    if (a + b > sizeof(req))
+        return GEMDOS_EPTHNF;
+    memcpy(req, from, a);
+    memcpy(req + a, to, b);
+    int n = call(slot, CMD_RENAME, req, a + b);
+    if (n < 0)
+        return GEMDOS_ERROR;
+    return s_rx[4] == ST_OK ? 0 : to_gemdos(s_rx[4]);
+}
+
+int64_t tnfs_free_kb(int slot)
+{
+    int n = call(slot, CMD_FREE, NULL, 0);
+    if (n < 9 || s_rx[4] != ST_OK)
+        return GEMDOS_ERROR;
+    return le32(s_rx + 5);
 }
