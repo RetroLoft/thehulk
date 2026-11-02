@@ -183,13 +183,11 @@ static void start_cartridge(void)
     s_rec.brownouts = bootrec_brownouts();
     s_rec.waited = !fpga_power_present();
     if (!fpga_power_present()) {
-        status_led_set(STATUS_WAIT_POWER);
         ESP_LOGI(TAG, "waiting for Atari power");
         while (!fpga_power_present())
             vTaskDelay(pdMS_TO_TICKS(5));
         vTaskDelay(pdMS_TO_TICKS(10));         // let the 1.2 V / 3.3 V regulators settle
     }
-    status_led_set(STATUS_STARTING);
     s_rec.t_power = now_ms();
 
     for (;;) {
@@ -223,17 +221,18 @@ static void start_cartridge(void)
                 shadow_write_range(done, HULK_ROM_SIZE - done);
                 ESP_LOGI(TAG, "cartridge enabled (gateware v%d, image %u bytes, %lu ms)",
                          version, (unsigned)rom_len(), (unsigned long)(now_ms() - s_rec.t_enabled));
-                status_led_set(STATUS_ACTIVE);
+                status_led_fatal(false);
                 return;
             }
             ESP_LOGE(TAG, "FPGA does not answer the ID command");
         }
-        status_led_set(STATUS_ERROR);
+        // With USB connected the first attempt after power-on often fails, the second works
+        if (s_rec.attempts > 1)
+            status_led_fatal(true);
         fpga_safe();
         vTaskDelay(pdMS_TO_TICKS(100));
         while (!fpga_power_present())
             vTaskDelay(pdMS_TO_TICKS(5));
-        status_led_set(STATUS_STARTING);
     }
 }
 
@@ -294,9 +293,8 @@ void app_main(void)
             bootrec_print();
             if (errors) {
                 ESP_LOGE(TAG, "cartridge verify: %d errors, rewriting", errors);
-                status_led_set(STATUS_ERROR);
+                status_led_error();
                 shadow_write_range(0, HULK_ROM_SIZE);
-                status_led_set(STATUS_ACTIVE);
             }
         }
 
@@ -339,7 +337,7 @@ void app_main(void)
         }
 
         fpga_safe();
-        status_led_set(STATUS_WAIT_POWER);
+        status_led_fatal(false);
         ESP_LOGI(TAG, "Atari switched off: FPGA lines driven low");
 
         // PWR_ON stays high for a while as the capacitors discharge: do not configure

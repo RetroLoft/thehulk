@@ -13,6 +13,7 @@
 #include "gemdrv_layout.h"
 #include "sd.h"
 #include "settings.h"
+#include "status_led.h"
 #include "tnfs.h"
 
 #define MAX_PATH    256
@@ -101,6 +102,15 @@ void fs_set_sd_slot(int slot, const char *sd_path)
 static bool slot_is_tnfs(int slot)
 {
     return slot >= 0 && slot < FS_MAX_SLOTS && s_is_tnfs[slot];
+}
+
+// The Atari asks for the card: without a card the LED shows it
+static bool card_there(void)
+{
+    if (sd_ready())
+        return true;
+    status_led_error();
+    return false;
 }
 
 static bool slot_is_sd(int slot)
@@ -372,7 +382,9 @@ static int16_t fresult_to_gemdos(FRESULT fr)
     case FR_DENIED:
     case FR_EXIST:
     case FR_WRITE_PROTECTED: return GEMDOS_EACCDN;
-    default:                return GEMDOS_ERROR;
+    default:
+        status_led_error();
+        return GEMDOS_ERROR;
     }
 }
 
@@ -529,6 +541,7 @@ static const flash_file_t *flash_find(const char *apath)
 
 int16_t fs_fsfirst(int slot, uint32_t dta, const char *path, uint16_t attribs, uint8_t *dta_out)
 {
+    status_led_activity();
     char adir[MAX_PATH], fat[MAX_PATH];
     const char *pattern;
     memset(dta_out, 0, FS_DTA_SIZE);
@@ -560,7 +573,7 @@ int16_t fs_fsfirst(int slot, uint32_t dta, const char *path, uint16_t attribs, u
         int16_t found = next_match(s, dta_out);
         return found == GEMDOS_ENMFIL ? GEMDOS_EFILNF : found;
     }
-    if (!sd_ready() || !to_fat(slot, adir[0] ? adir : ".", fat, sizeof(fat)))
+    if (!card_there() || !to_fat(slot, adir[0] ? adir : ".", fat, sizeof(fat)))
         return GEMDOS_EPTHNF;
 
     search_t *s = new_search(dta);
@@ -576,6 +589,7 @@ int16_t fs_fsfirst(int slot, uint32_t dta, const char *path, uint16_t attribs, u
 
 int16_t fs_fsnext(uint32_t dta, uint8_t *dta_out)
 {
+    status_led_activity();
     search_t *s = find_search(dta);
     if (!s) {
         memset(dta_out, 0, FS_DTA_SIZE);
@@ -658,7 +672,7 @@ static void sd_close_path(const char *fat)
 // A file on the card: FatFs mode, FA_READ alone leaves other handles on the file alone
 static int32_t sd_open_file(const char *fat, BYTE fa_mode)
 {
-    if (!sd_ready() || !s_files)
+    if (!card_there() || !s_files)
         return GEMDOS_EFILNF;
     for (int i = 0; i < MAX_FILES; i++) {
         if (s_files[i].used)
@@ -698,6 +712,7 @@ static int32_t sd_open_file(const char *fat, BYTE fa_mode)
 
 int32_t fs_fopen(int slot, const char *path, uint16_t mode)
 {
+    status_led_activity();
     char fat[MAX_PATH];
     if ((mode & 3) != 0 && !slot_is_tnfs(slot) && !slot_is_sd(slot))
         return GEMDOS_EACCDN;           // the flash drive is read-only
@@ -733,6 +748,7 @@ int32_t fs_fopen(int slot, const char *path, uint16_t mode)
 
 int32_t fs_fcreate(int slot, const char *path, uint16_t attr)
 {
+    status_led_activity();
     char fat[MAX_PATH];
     if (!slot_is_tnfs(slot) && !slot_is_sd(slot))
         return GEMDOS_EACCDN;
@@ -763,6 +779,7 @@ static int tnfs_sync_pos(file_t *f)
 
 int32_t fs_fwrite(uint16_t handle, const uint8_t *buf, uint32_t len)
 {
+    status_led_activity();
     file_t *f = get_file(handle);
     if (!f)
         return GEMDOS_EIHNDL;
@@ -801,6 +818,7 @@ int16_t fs_fwrite_commit(uint16_t handle, uint32_t len)
 
 int16_t fs_fdelete(int slot, const char *path)
 {
+    status_led_activity();
     char fat[MAX_PATH];
     if (!slot_is_tnfs(slot) && !slot_is_sd(slot))
         return GEMDOS_EACCDN;
@@ -808,7 +826,7 @@ int16_t fs_fdelete(int slot, const char *path)
         return to_tnfs(slot, path, fat, sizeof(fat)) ? tnfs_unlink(slot, fat) : GEMDOS_EFILNF;
     if (!to_fat(slot, path, fat, sizeof(fat)))
         return GEMDOS_EFILNF;
-    if (!sd_ready())
+    if (!card_there())
         return GEMDOS_EFILNF;
     FILINFO fno;
     FRESULT fr = f_stat(fat, &fno);
@@ -823,6 +841,7 @@ int16_t fs_fdelete(int slot, const char *path)
 
 int16_t fs_dcreate(int slot, const char *path)
 {
+    status_led_activity();
     char fat[MAX_PATH];
     if (!slot_is_tnfs(slot) && !slot_is_sd(slot))
         return GEMDOS_EACCDN;
@@ -830,11 +849,12 @@ int16_t fs_dcreate(int slot, const char *path)
         return to_tnfs(slot, path, fat, sizeof(fat)) ? tnfs_mkdir(slot, fat) : GEMDOS_EPTHNF;
     if (!to_fat(slot, path, fat, sizeof(fat)))
         return GEMDOS_EPTHNF;
-    return sd_ready() ? fresult_to_gemdos(f_mkdir(fat)) : GEMDOS_EPTHNF;
+    return card_there() ? fresult_to_gemdos(f_mkdir(fat)) : GEMDOS_EPTHNF;
 }
 
 int16_t fs_ddelete(int slot, const char *path)
 {
+    status_led_activity();
     char fat[MAX_PATH];
     if (!slot_is_tnfs(slot) && !slot_is_sd(slot))
         return GEMDOS_EACCDN;
@@ -846,7 +866,7 @@ int16_t fs_ddelete(int slot, const char *path)
     }
     if (!to_fat(slot, path, fat, sizeof(fat)))
         return GEMDOS_EPTHNF;
-    if (!sd_ready())
+    if (!card_there())
         return GEMDOS_EPTHNF;
     if (!strcmp(fat, s_root[slot]))
         return GEMDOS_EACCDN;
@@ -861,6 +881,7 @@ int16_t fs_ddelete(int slot, const char *path)
 
 int32_t fs_frename(int slot, int slot_to, const char *from, const char *to)
 {
+    status_led_activity();
     char a[MAX_PATH], b[MAX_PATH];
     if (!slot_is_tnfs(slot) && !slot_is_sd(slot))
         return GEMDOS_EACCDN;
@@ -871,7 +892,7 @@ int32_t fs_frename(int slot, int slot_to, const char *from, const char *to)
                    ? tnfs_rename(slot, a, b) : GEMDOS_EFILNF;
     if (!to_fat(slot, from, a, sizeof(a)) || !to_fat(slot, to, b, sizeof(b)))
         return GEMDOS_EFILNF;
-    if (!sd_ready())
+    if (!card_there())
         return GEMDOS_EFILNF;
     size_t len = strlen(a);
     if (!strcmp(a, s_root[slot]) || (!strncasecmp(a, b, len) && b[len] == '/'))
@@ -885,7 +906,7 @@ uint32_t fs_free_clusters(int slot)
     int64_t kb = 0;                     // a cluster is 1 KB, see the Dfree command
     if (slot_is_tnfs(slot)) {
         kb = tnfs_free_kb(slot);
-    } else if (slot_is_sd(slot) && sd_ready()) {
+    } else if (slot_is_sd(slot) && card_there()) {
         DWORD clusters;
         FATFS *fs;
         if (f_getfree("0:", &clusters, &fs) == FR_OK)
@@ -896,6 +917,7 @@ uint32_t fs_free_clusters(int slot)
 
 int32_t fs_fread(uint16_t handle, uint8_t *buf, uint32_t len)
 {
+    status_led_activity();
     file_t *f = get_file(handle);
     if (!f)
         return GEMDOS_EIHNDL;
@@ -994,7 +1016,7 @@ int32_t fs_fattrib(int slot, const char *path, uint16_t flag, uint16_t attr)
     if (flag && !slot_is_sd(slot))
         return GEMDOS_EACCDN;
     if (flag) {
-        if (!sd_ready() || !to_fat(slot, path, fat, sizeof(fat)))
+        if (!card_there() || !to_fat(slot, path, fat, sizeof(fat)))
             return GEMDOS_EFILNF;
         if (!strcmp(fat, s_root[slot]))
             return GEMDOS_EACCDN;
@@ -1016,7 +1038,7 @@ int32_t fs_fattrib(int slot, const char *path, uint16_t flag, uint16_t attr)
             return r == GEMDOS_EPTHNF ? GEMDOS_EFILNF : r;
         return is_dir ? FA_ST_DIR : 0;
     }
-    if (!sd_ready() || !to_fat(slot, path, fat, sizeof(fat)))
+    if (!card_there() || !to_fat(slot, path, fat, sizeof(fat)))
         return GEMDOS_EFILNF;
     if (!strcmp(fat, s_root[slot]))
         return FA_ST_DIR;
@@ -1044,7 +1066,7 @@ int16_t fs_dsetpath(int slot, const char *path)
             return GEMDOS_EPTHNF;
         if (!strcmp(fat, "/"))
             fat[0] = 0;
-    } else if (!sd_ready() || !to_fat(slot, path, fat, sizeof(fat))) {
+    } else if (!card_there() || !to_fat(slot, path, fat, sizeof(fat))) {
         return GEMDOS_EPTHNF;
     } else if (strcmp(fat, s_root[slot])) {
         FILINFO fno;

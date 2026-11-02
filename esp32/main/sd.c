@@ -11,6 +11,7 @@
 #include "board.h"
 #include "gemdrv_fs.h"
 #include "sd.h"
+#include "status_led.h"
 
 static const char *TAG = "sd";
 
@@ -102,6 +103,7 @@ static void card_in(void)
                  ((unsigned long long)s_card->csd.capacity * s_card->csd.sector_size) >> 20);
         list_root();
         s_ready = true;
+        status_led_card();
     } else {
         ESP_LOGW(TAG, "no card: %s", esp_err_to_name(err));
     }

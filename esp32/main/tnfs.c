@@ -7,6 +7,7 @@
 #include "lwip/netdb.h"
 #include "lwip/sockets.h"
 #include "gemdrv_layout.h"
+#include "status_led.h"
 #include "tnfs.h"
 #include "wifi.h"
 
@@ -176,16 +177,17 @@ static bool mount(slot_t *s)
 static int call(int slot, uint8_t cmd, const void *data, size_t len)
 {
     slot_t *s = &s_slots[slot];
-    if (slot < 0 || slot >= TNFS_MAX_SLOTS || !mount(s))
-        return -1;
-    int n = request(s, cmd, data, len);
-    if (n >= 5 && s_rx[4] == ST_BAD_SESSION) {
-        s->mounted = false;
-        s->next_try = 0;
-        if (!mount(s))
-            return -1;
+    int n = -1;
+    if (slot >= 0 && slot < TNFS_MAX_SLOTS && mount(s)) {
         n = request(s, cmd, data, len);
+        if (n >= 5 && s_rx[4] == ST_BAD_SESSION) {
+            s->mounted = false;
+            s->next_try = 0;
+            n = mount(s) ? request(s, cmd, data, len) : -1;
+        }
     }
+    if (n < 0)
+        status_led_error();
     return n;
 }
 
