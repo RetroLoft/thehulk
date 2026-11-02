@@ -126,7 +126,9 @@ static void handle_packets(void)
             return;
         hulk_ack_packet();
 #ifndef HULK_CART_READONLY
+        sd_lock();
         gemdrv_command(&pkt);
+        sd_unlock();
         shadow_sync();
 #if HULK_GEMDRIVE_NO_INSTALL
         if (!shadow_is_synced())
@@ -173,7 +175,9 @@ static void start_cartridge(void)
     shadow_init();
     shadow_load_image(rom_start, rom_len());
 #ifndef HULK_CART_READONLY
+    sd_lock();
     gemdrv_init();
+    sd_unlock();
 #endif
     s_rec.reset_reason = esp_reset_reason();
     s_rec.brownouts = bootrec_brownouts();

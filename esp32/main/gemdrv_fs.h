@@ -16,6 +16,8 @@ void fs_set_sd_slot(int slot, const char *sd_path);
 void fs_set_tnfs_slot(int slot, const char *host, uint16_t port, const char *mount);
 void fs_set_flash_slot(int slot);
 void fs_reset(void);
+// The card is gone: its open files and searches are forgotten
+void fs_sd_removed(void);
 
 // The DTA is filled in the Atari's byte order (dta[0] is the byte at the DTA address)
 int16_t fs_fsfirst(int slot, uint32_t dta, const char *path, uint16_t attribs, uint8_t *dta_out);

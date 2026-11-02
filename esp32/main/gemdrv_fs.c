@@ -163,6 +163,19 @@ void fs_reset(void)
     }
 }
 
+void fs_sd_removed(void)
+{
+    for (int i = 0; s_files && i < MAX_FILES; i++)
+        if (s_files[i].used && s_files[i].tnfs_slot < 0 && !s_files[i].flash)
+            s_files[i].used = false;
+    for (int i = 0; i < MAX_SEARCH; i++)
+        if (s_search[i].open && s_search[i].tnfs_slot < 0 && !s_search[i].flash)
+            s_search[i].open = false;
+    for (int i = 0; i < FS_MAX_SLOTS; i++)
+        if (slot_is_sd(i))
+            s_cwds[i][0] = 0;
+}
+
 // --- Paths --------------------------------------------------------------------------
 
 // Atari path -> FatFs path below the folder of the slot. Handles the drive letter, the current folder,
