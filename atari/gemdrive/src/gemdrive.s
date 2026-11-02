@@ -371,16 +371,16 @@ trace_call          macro
 .\@trace_skip:
                     endm
 
+; TheHulk: Dgetdrv and Fgetdta need no reentry lock, which costs two commands: the hook
+; does not handle them, so the nested call just passes through it, on the hook stack.
 ; Check if the current GEMDOS drive is one of the emulated drives. If not,
 ; exec_old_handler the code, otherwise continue with the code.
 ; Output: d0.w = slot index (0..SIDETNFS_MAX_RUNTIME_DRIVES-1) of the matched drive in
 ; the shared drive_number table -- not yet used by any caller in this phase,
 ; but every call site now receives it for later phases to consume.
 detect_emulated_drive   macro
-                        reentry_gem_lock
                         gemdos Dgetdrv, 2                    ; Call Dgetdrv() and get the drive number
                         move.l d0, -(sp)                     ; Save the return value with the drive number
-                        reentry_gem_unlock
                         move.l (sp)+, d0                     ; Restore the drive number
                         bsr find_drive_slot_by_number         ; d0 = slot index, or -1 if not one of the emulated drives
                         tst.w d0
@@ -1400,10 +1400,8 @@ _notlong:
     tst.w d3                             ; Check if the unit is 0 (current drive)
     bne.s .dfree_use_unit                ; If not 0, convert the given unit to a 0-based drive number
 
-    reentry_gem_lock
     gemdos Dgetdrv, 2                    ; Call Dgetdrv() and get the current 0-based drive number
     move.l d0, -(sp)                     ; Save the return value with the drive number
-    reentry_gem_unlock
     move.l (sp)+, d3                     ; Restore the drive number
     bra.s .dfree_check_drive
 
@@ -1485,10 +1483,8 @@ _notlong:
     tst.w d3                             ; Check if the unit is 0 (current drive)
     bne.s .dgetpath_use_unit             ; If not 0, convert the given unit to a 0-based drive number
 
-    reentry_gem_lock
     gemdos Dgetdrv, 2                    ; Call Dgetdrv() and get the current 0-based drive number
     move.l d0, -(sp)                     ; Save the return value with the drive number
-    reentry_gem_unlock
     move.l (sp)+, d3                     ; Restore the drive number
     bra.s .dgetpath_check_drive
 
@@ -1966,13 +1962,11 @@ _notlong:
     swap d0                              ; d0 = slot index moved into the high word (low word now 0)
     or.l d0, d4                          ; d4 = (slot<<16) | attribs -- see wire layout note above
 
-    reentry_gem_lock
 
     gemdos Fgetdta, 2                    ; Call Fgetdta() and get the address of the DTA
     move.l d0, -(sp)                     ; Save the return value with the address of the DTA
 
-    reentry_gem_unlock
-
+    
     move.l (sp), d3                            ; Restore the DTA value
     move.l a4, d5                              ; Save the address of the file specification string
     send_write_sync CMD_FSFIRST_CALL, 192      ; Send the command to the Sidecart. 256 bytes of buffer to send
@@ -2001,10 +1995,8 @@ _notlong:
 ;    return_rte
 
 .Fsnext:
-    reentry_gem_lock
     gemdos Fgetdta, 2                     ; Call Fgetdta() and get the address of the DTA
     move.l d0, -(sp)                      ; Save the return value with the address of the DTA
-    reentry_gem_unlock
 
     move.l (sp), d3                       ; Check if the DTA exists in the rp2040 memory
     send_sync CMD_DTA_EXIST_CALL, 4       ; Send the command to the Sidecart. 4 bytes of payload

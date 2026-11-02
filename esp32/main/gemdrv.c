@@ -307,6 +307,7 @@ void gemdrv_command(const hulk_packet_t *pkt)
             uintptr_t code = shadow_base() + xbra - ATARI_ROM4_START;
             *((volatile uint16_t *)code) = trap_old & 0xFFFF;
             *((volatile uint16_t *)(code + 2)) = trap_old >> 16;
+            shadow_mark(xbra - ATARI_ROM4_START, 4);
         }
         ESP_LOGI(TAG, "SAVE_VECTORS: GEMDOS trap %08lx, XBRA at %06lx",
                  (unsigned long)trap_old, (unsigned long)xbra);
@@ -405,8 +406,10 @@ void gemdrv_command(const hulk_packet_t *pkt)
         static uint8_t buf[GEMDRVEMUL_READ_BUFF_SIZE];
         uint32_t pending = ((uint32_t)payloadPtr[5] << 16) | payloadPtr[4];
         int32_t n = fs_fread(payloadPtr[0], buf, pending > sizeof(buf) ? sizeof(buf) : pending);
-        if (n > 0)
+        if (n > 0) {
             write_bytes(GEMDRVEMUL_READ_BUFF, buf, n);
+            shadow_mark(SHADOW_ROM3 + GEMDRVEMUL_READ_BUFF, n);
+        }
         WRITE_AND_SWAP_LONGWORD(m, GEMDRVEMUL_READ_BYTES, (uint32_t)n);
         break;
     }

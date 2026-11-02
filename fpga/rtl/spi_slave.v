@@ -55,7 +55,7 @@ module spi_slave (
     input  wire [15:0] pkt_count,
     input  wire [15:0] pkt_drops
 );
-    localparam [7:0] VERSION = 8'h0d;
+    localparam [7:0] VERSION = 8'h0e;
 
     localparam CMD_WRITE  = 8'h01;
     localparam CMD_READ   = 8'h02;

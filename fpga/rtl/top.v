@@ -92,9 +92,16 @@ module top (
         rom4_d <= rom4_s[1];
     end
 
-    // Start of a /ROM4 or /ROM3 cycle (address and /UDS are stable by then)
+    // Start of a /ROM4 or /ROM3 cycle
     wire rom4_start = rom4_d & ~rom4_s[1];
     wire rom3_start = rom3_d & ~rom3_s[1];
+    // The decoder looks at the address three clocks later (~120 ns after /ROM3 falls, the
+    // cycle lasts 250 ns or more): on the Falcon some lines still change at rom3_start.
+    // The SPRAM follows the address all the time, so the data needs no such delay.
+    reg [2:0] rom3_late = 3'b000;
+    always @(posedge clk)
+        rom3_late <= {rom3_late[1:0], rom3_start};
+    wire rom3_sample = rom3_late[2];
 
     // ------------------------------------------------------------------
     // SPI slave / register interface
@@ -214,7 +221,7 @@ module top (
     reg [10:0] p_waddr;
     reg [15:0] p_wdata;
 
-    // The address is stable for several clocks before rom3_start, so the comparisons
+    // The address is stable for several clocks before rom3_sample, so the comparisons
     // are registered a clock ahead (timing)
     wire [7:0]  rom3_byte = a_q[7:0];          // A8..A1
     wire [15:0] p_word    = {p_high, rom3_byte};
@@ -224,7 +231,7 @@ module top (
     reg         p_left_le2;        // the next payload word is the last one
     reg         p_done;            // the packet is complete
 
-    // The decoder acts one clock after rom3_start, on flags registered from its state
+    // The decoder acts one clock after rom3_sample, on flags registered from its state
     // (timing). ROM3 cycles are many clocks apart and the address stays valid.
     reg         p_ev = 1'b0;       // a ROM3 cycle to decode
     reg         st_header;         // waiting for a header (or the packet timed out)
@@ -244,7 +251,7 @@ module top (
         if (!rom_enable) begin
             cap_n    <= 0;
             cap_poll <= 1'b0;
-        end else if (rom3_start) begin
+        end else if (rom3_sample) begin
             cap_poll <= a_is_poll;
             if (!(a_is_poll && cap_poll)) begin
                 cap_mem[cap_n] <= {a_q, st_header};
@@ -267,7 +274,7 @@ module top (
 
     always @(posedge clk) begin
         p_we      <= 1'b0;
-        p_ev      <= rom3_start;
+        p_ev      <= rom3_sample;
         st_header <= p_state == P_HEADER || p_expired;
         st_low    <= p_low;
         st_cmd    <= p_state == P_CMD;
@@ -324,7 +331,7 @@ module top (
         end
 
         // Packet complete: no payload, or the last payload word just arrived
-        if (p_state == P_DATA && p_done && !p_ev && !rom3_start) begin
+        if (p_state == P_DATA && p_done && !p_ev && !rom3_sample) begin
             p_state   <= P_HEADER;
             pkt_ready <= 1'b1;
             pkt_count <= pkt_count + 1'b1;

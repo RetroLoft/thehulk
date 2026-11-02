@@ -14,6 +14,13 @@ static uint8_t *s_mem;       // the shadow, CPU word order
 static uint8_t *s_synced;    // what the SPRAM holds
 static uint8_t s_buf[4096];  // big-endian bounce buffer for the SPI
 
+// What a command can change without shadow_mark: the first block of ROM3 (token, status
+// words, DTA) and the status block behind the read buffer (with the shared variables)
+#define SYNC_STATUS_START  0x4000
+#define SYNC_STATUS_LEN    0x400
+
+static uint32_t s_mark_lo = HULK_ROM_SIZE, s_mark_hi;
+
 esp_err_t shadow_init(void)
 {
     if (!s_mem) {
@@ -70,20 +77,53 @@ esp_err_t shadow_write_range(uint32_t offset, size_t len)
     return write_be(offset & ~1u, (len + 1) & ~1u);
 }
 
+void shadow_mark(uint32_t offset, size_t len)
+{
+    if (offset < s_mark_lo)
+        s_mark_lo = offset;
+    if (offset + len > s_mark_hi)
+        s_mark_hi = offset + len;
+}
+
+// Writes the words of a range that changed, as one piece from the first to the last
+static esp_err_t sync_range(uint32_t offset, size_t len)
+{
+    if (memcmp(s_mem + offset, s_synced + offset, len) == 0)
+        return ESP_OK;
+    size_t first = 0, last = len;
+    while (s_mem[offset + first] == s_synced[offset + first] &&
+           s_mem[offset + first + 1] == s_synced[offset + first + 1])
+        first += 2;
+    while (s_mem[offset + last - 1] == s_synced[offset + last - 1] &&
+           s_mem[offset + last - 2] == s_synced[offset + last - 2])
+        last -= 2;
+    return write_be(offset + first, last - first);
+}
+
+// Comparing the whole 128 KB in PSRAM takes ~10 ms, too long for each command
 esp_err_t shadow_sync(void)
 {
-    const int token_blk = SHADOW_ROM3 / BLOCK;
     esp_err_t err = ESP_OK;
-    for (int b = 0; b < BLOCKS && err == ESP_OK; b++) {
-        if (b != token_blk && memcmp(s_mem + b * BLOCK, s_synced + b * BLOCK, BLOCK) != 0)
-            err = write_be(b * BLOCK, BLOCK);
+    uint32_t lo = s_mark_lo & ~(BLOCK - 1), hi = s_mark_hi;
+    for (uint32_t off = lo; off < hi && err == ESP_OK; off += BLOCK) {
+        if (off != SHADOW_ROM3)         // the token block goes last
+            err = sync_range(off, BLOCK);
     }
+    s_mark_lo = HULK_ROM_SIZE;
+    s_mark_hi = 0;
+    for (uint32_t off = 0; off < SYNC_STATUS_LEN && err == ESP_OK; off += BLOCK)
+        err = sync_range(SHADOW_ROM3 + SYNC_STATUS_START + off, BLOCK);
     uint32_t t = SHADOW_ROM3;
-    if (err == ESP_OK && memcmp(s_mem + t + 4, s_synced + t + 4, BLOCK - 4) != 0)
-        err = write_be(t + 4, BLOCK - 4);
-    if (err == ESP_OK && memcmp(s_mem + t, s_synced + t, 4) != 0)
-        err = write_be(t, 4);
+    if (err == ESP_OK)
+        err = sync_range(t + 4, BLOCK - 4);
+    if (err == ESP_OK)
+        err = sync_range(t, 4);         // the token itself at the very end
     return err;
+}
+
+bool shadow_is_synced(void)
+{
+    return memcmp(s_mem, s_synced, HULK_ROM_SIZE) == 0;
 }
 
 int shadow_verify(void)

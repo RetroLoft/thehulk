@@ -85,18 +85,50 @@ static size_t rom_len(void)
 
 // Command packets from the Atari: /IRQ is low while one is waiting. The packet is
 // acknowledged first (the FPGA can take the next one), then answered.
+static TaskHandle_t s_main_task;
+static uint32_t s_slowest_us;   // slowest command since the last log line
+
+static void irq_isr(void *arg)
+{
+    BaseType_t woken = pdFALSE;
+    vTaskNotifyGiveFromISR(s_main_task, &woken);
+    portYIELD_FROM_ISR(woken);
+}
+
+static void irq_start(void)
+{
+    s_main_task = xTaskGetCurrentTaskHandle();
+    gpio_install_isr_service(0);
+    gpio_set_intr_type(PIN_FPGA_IRQ, GPIO_INTR_NEGEDGE);
+    gpio_isr_handler_add(PIN_FPGA_IRQ, irq_isr, NULL);
+}
+
+// Until /IRQ falls, at most a tick: the Atari waits for each answer
+static void wait_for_packet(void)
+{
+    ulTaskNotifyTake(pdTRUE, 1);
+}
+
 static void handle_packets(void)
 {
     static hulk_packet_t pkt;
     // /IRQ reads low too while the FPGA side is unpowered
     while (!gpio_get_level(PIN_FPGA_IRQ) && fpga_power_present() && fpga_done()) {
+        int64_t t0 = esp_timer_get_time();
         if (hulk_get_packet(&pkt) != ESP_OK)
             return;
         hulk_ack_packet();
 #ifndef HULK_CART_READONLY
         gemdrv_command(&pkt);
         shadow_sync();
+#if HULK_GEMDRIVE_NO_INSTALL
+        if (!shadow_is_synced())
+            ESP_LOGE(TAG, "command 0x%04x changed the shadow outside the synced areas", pkt.cmd);
 #endif
+#endif
+        uint32_t us = esp_timer_get_time() - t0;
+        if (us > s_slowest_us)
+            s_slowest_us = us;
     }
 }
 
@@ -196,6 +228,7 @@ void app_main(void)
     bootrec_start();
 
     ESP_ERROR_CHECK(fpga_init());
+    irq_start();
     status_led_init();
     sd_start();
     if (!fpga_power_present())
@@ -210,7 +243,7 @@ void app_main(void)
         while (fpga_power_present() && now_ms() - s_rec.t_enabled < 20000 &&
                !(s_rec.t_rom3 && now_ms() - s_rec.t_enabled >= 3000)) {
             hulk_status_t st;
-            vTaskDelay(1);
+            wait_for_packet();
             if (hulk_get_status(&st) != ESP_OK)
                 continue;
             if (!s_rec.t_rom3 && st.rom3_count)
@@ -228,7 +261,7 @@ void app_main(void)
         while (fpga_power_present() && fpga_done() && now_ms() - t_quiet < 500 &&
                now_ms() - t_wait < 30000) {
             hulk_status_t st;
-            vTaskDelay(1);
+            wait_for_packet();
             handle_packets();
             if (hulk_get_status(&st) == ESP_OK && st.pkt_count != pkts) {
                 pkts = st.pkt_count;
@@ -256,7 +289,7 @@ void app_main(void)
         int64_t lost_time = 0;
         bool lost_logged = false;
         while (fpga_power_present() && fpga_done()) {
-            vTaskDelay(1);
+            wait_for_packet();
             handle_packets();
             if (hulk_get_status(&st) != ESP_OK)
                 continue;
@@ -277,9 +310,11 @@ void app_main(void)
                 now - last_log > 1000000) {
                 last_log = now;
                 ESP_LOGI(TAG, "cartridge reads: ROM4 %lu, ROM3 %lu, last %06lx, early %u, "
-                         "packets %u, dropped %u",
+                         "packets %u, dropped %u, slowest %lu us",
                          (unsigned long)st.rom4_count, (unsigned long)st.rom3_count,
-                         (unsigned long)st.last_addr, st.early_count, st.pkt_count, st.pkt_drops);
+                         (unsigned long)st.last_addr, st.early_count, st.pkt_count, st.pkt_drops,
+                         (unsigned long)s_slowest_us);
+                s_slowest_us = 0;
             }
             prev = st;
         }

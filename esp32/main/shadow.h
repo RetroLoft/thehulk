@@ -4,6 +4,7 @@
 // Offset 0x00000 = 0xFA0000 (/ROM4), 0x10000 = 0xFB0000 (/ROM3).
 #pragma once
 
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 #include "esp_err.h"
@@ -17,8 +18,12 @@ uintptr_t shadow_base(void);
 void shadow_load_image(const uint8_t *img, size_t len);
 // Writes [offset, offset + len) to the SPRAM without comparing (boot path).
 esp_err_t shadow_write_range(uint32_t offset, size_t len);
-// Writes every 512-byte block that changed since the last sync. The block holding
-// the token (0xFB0000) goes last, its first 4 bytes (the token itself) at the very end.
+// Writes what changed to the SPRAM: the first block of ROM3 and the status area, and the
+// ranges given to shadow_mark. The token (0xFB0000) goes last. Everything a command writes
+// outside those two areas must be marked.
+void shadow_mark(uint32_t offset, size_t len);
 esp_err_t shadow_sync(void);
+// Diagnostics: true when the SPRAM holds the whole shadow
+bool shadow_is_synced(void);
 // Compares the SPRAM with the shadow, returns the number of differing bytes.
 int shadow_verify(void);
