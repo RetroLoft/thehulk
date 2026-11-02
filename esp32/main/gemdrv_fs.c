@@ -1,15 +1,19 @@
 // GEMDRIVE storage, see gemdrv_fs.h. The SD drive uses FatFs directly (not the VFS): it
 // gives the DOS date/time and the FAT attributes, which are the GEMDOS ones. The flash
-// drive is a fixed list of files in the firmware.
+// drive is a fixed list of files in the firmware. A TNFS drive shows names that GEMDOS can
+// use: 8.3 in capitals.
 #include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
+#include <time.h>
 #include "ff.h"
 #include "gemdrv_fs.h"
 #include "gemdrv_layout.h"
 #include "sd.h"
+#include "settings.h"
+#include "tnfs.h"
 
 #define MAX_PATH    256
 #define MAX_FILES   16
@@ -27,6 +31,7 @@
 static char s_root[FS_MAX_SLOTS][MAX_PATH];
 static char s_cwds[FS_MAX_SLOTS][MAX_PATH];
 static int s_flash_slot = -1;
+static bool s_is_tnfs[FS_MAX_SLOTS];
 
 // The flash drive: one folder, read-only
 extern const uint8_t thehulk_prg_start[] asm("_binary_THEHULK_PRG_start");
@@ -51,6 +56,9 @@ typedef struct {
     bool used;
     FIL fil;
     const flash_file_t *flash;      // on the flash drive: no FIL
+    int tnfs_slot;                  // on a TNFS drive: no FIL (-1: not)
+    uint8_t tnfs_handle;
+    uint32_t size;
     uint32_t pos;
     uint16_t time, date;
 } file_t;
@@ -61,6 +69,8 @@ typedef struct {
     bool open;                      // directory still open (not at its end)
     bool flash;                     // on the flash drive: no FF_DIR
     int flash_next;
+    int tnfs_slot;                  // on a TNFS drive: no FF_DIR (-1: not)
+    uint8_t tnfs_handle;
     FF_DIR dir;
     char name[8], ext[3];           // pattern, '?' for any character
     uint8_t attribs;
@@ -73,6 +83,7 @@ void fs_set_sd_slot(int slot, const char *sd_path)
 {
     if (slot < 0 || slot >= FS_MAX_SLOTS)
         return;
+    s_is_tnfs[slot] = false;
     size_t n = snprintf(s_root[slot], MAX_PATH, "0:%s%s", sd_path[0] == '/' || sd_path[0] == '\\' ? "" : "/", sd_path);
     for (size_t i = 0; i < n && i < MAX_PATH; i++)
         if (s_root[slot][i] == '\\')
@@ -81,9 +92,29 @@ void fs_set_sd_slot(int slot, const char *sd_path)
         s_root[slot][--n] = 0;
 }
 
+void fs_set_tnfs_slot(int slot, const char *host, uint16_t port, const char *mount)
+{
+    if (slot < 0 || slot >= FS_MAX_SLOTS)
+        return;
+    s_is_tnfs[slot] = true;
+    s_root[slot][0] = 0;
+    tnfs_set_slot(slot, host, port, mount);
+}
+
 void fs_set_flash_slot(int slot)
 {
     s_flash_slot = slot;
+}
+
+static void search_close(search_t *s)
+{
+    if (!s->open)
+        return;
+    if (s->tnfs_slot >= 0)
+        tnfs_dir_close(s->tnfs_slot, s->tnfs_handle);
+    else if (!s->flash)
+        f_closedir(&s->dir);
+    s->open = false;
 }
 
 void fs_reset(void)
@@ -93,13 +124,14 @@ void fs_reset(void)
     if (!s_files)
         s_files = calloc(MAX_FILES, sizeof(file_t));
     for (int i = 0; s_files && i < MAX_FILES; i++) {
-        if (s_files[i].used && !s_files[i].flash)
+        if (s_files[i].used && s_files[i].tnfs_slot >= 0)
+            tnfs_file_close(s_files[i].tnfs_slot, s_files[i].tnfs_handle);
+        else if (s_files[i].used && !s_files[i].flash)
             f_close(&s_files[i].fil);
         s_files[i].used = false;
     }
     for (int i = 0; i < MAX_SEARCH; i++) {
-        if (s_search[i].open && !s_search[i].flash)
-            f_closedir(&s_search[i].dir);
+        search_close(&s_search[i]);
         s_search[i].dta = 0;
         s_search[i].open = false;
     }
@@ -111,7 +143,7 @@ void fs_reset(void)
 // "." and "..". Returns false when the path would leave the root.
 static bool to_fat(int slot, const char *apath, char *out, size_t size)
 {
-    if (slot < 0 || slot >= FS_MAX_SLOTS || !s_root[slot][0])
+    if (slot < 0 || slot >= FS_MAX_SLOTS || (!s_root[slot][0] && !s_is_tnfs[slot]))
         return false;
     char comp[16][13];
     int n = 0;
@@ -162,6 +194,11 @@ static bool to_fat(int slot, const char *apath, char *out, size_t size)
     size_t len = snprintf(out, size, "%s", s_root[slot]);
     for (int i = 0; i < n && len < size; i++)
         len += snprintf(out + len, size - len, "/%s", comp[i]);
+    if (!len && len + 1 < size) {       // the root of a TNFS drive
+        out[0] = '/';
+        out[1] = 0;
+        len = 1;
+    }
     return len < size;
 }
 
@@ -278,9 +315,9 @@ static search_t *new_search(uint32_t dta)
                 s = &s_search[i];       // all in use: reuse the oldest
         }
     }
-    if (s->open && !s->flash)
-        f_closedir(&s->dir);
+    search_close(s);
     memset(s, 0, sizeof(*s));
+    s->tnfs_slot = -1;
     s->dta = dta;
     s->age = ++s_age;
     return s;
@@ -303,9 +340,54 @@ static void fill_dta(uint8_t *d, const FILINFO *fno)
     strncpy((char *)d + 30, fno->fname, 13);
 }
 
+// A name GEMDOS can use: 8.3 in capitals
+static bool fits_gemdos(const char *name)
+{
+    const char *dot = strchr(name, '.');
+    size_t base = dot ? (size_t)(dot - name) : strlen(name);
+    if (!base || base > 8 || (dot && (strlen(dot + 1) > 3 || strchr(dot + 1, '.'))))
+        return false;
+    for (const char *p = name; *p; p++)
+        if (islower((unsigned char)*p))
+            return false;
+    return true;
+}
+
+// Unix time -> DOS date and time, in the time zone of the settings
+static void unix_to_dos(uint32_t t, uint16_t *date, uint16_t *tod)
+{
+    time_t local = (time_t)t + atoi(settings_rtc()->utc_offset) * 3600;
+    struct tm tm;
+    gmtime_r(&local, &tm);
+    if (tm.tm_year < 80) {
+        *date = (1 << 5) | 1;           // 1980-01-01
+        *tod = 0;
+        return;
+    }
+    *date = ((tm.tm_year - 80) << 9) | ((tm.tm_mon + 1) << 5) | tm.tm_mday;
+    *tod = (tm.tm_hour << 11) | (tm.tm_min << 5) | (tm.tm_sec / 2);
+}
+
 static int16_t next_match(search_t *s, uint8_t *dta_out)
 {
     FILINFO fno;
+    while (s->open && s->tnfs_slot >= 0) {
+        tnfs_entry_t e;
+        if (tnfs_dir_next(s->tnfs_slot, s->tnfs_handle, &e) <= 0) {
+            search_close(s);
+            break;
+        }
+        uint8_t attr = e.is_dir ? AM_DIR : 0;
+        if (fits_gemdos(e.name) && match(s, e.name) && attribs_ok(s->attribs, attr)) {
+            memset(&fno, 0, sizeof(fno));
+            fno.fsize = e.size;
+            fno.fattrib = attr;
+            unix_to_dos(e.mtime, &fno.fdate, &fno.ftime);
+            strncpy(fno.fname, e.name, sizeof(fno.fname) - 1);
+            fill_dta(dta_out, &fno);
+            return GEMDOS_EOK;
+        }
+    }
     while (s->open && s->flash) {
         if (s->flash_next >= (int)(sizeof(s_flash) / sizeof(s_flash[0]))) {
             s->open = false;
@@ -323,7 +405,7 @@ static int16_t next_match(search_t *s, uint8_t *dta_out)
             return GEMDOS_EOK;
         }
     }
-    while (s->open && !s->flash) {
+    while (s->open && !s->flash && s->tnfs_slot < 0) {
         if (f_readdir(&s->dir, &fno) != FR_OK || !fno.fname[0]) {
             f_closedir(&s->dir);
             s->open = false;
@@ -376,6 +458,22 @@ int16_t fs_fsfirst(int slot, uint32_t dta, const char *path, uint16_t attribs, u
         int16_t r = next_match(s, dta_out);
         return r == GEMDOS_ENMFIL ? GEMDOS_EFILNF : r;
     }
+    if (slot >= 0 && slot < FS_MAX_SLOTS && s_is_tnfs[slot]) {
+        uint8_t h;
+        if (!to_fat(slot, adir[0] ? adir : ".", fat, sizeof(fat)))
+            return GEMDOS_EPTHNF;
+        int r = tnfs_dir_open(slot, fat, &h);
+        if (r < 0)
+            return r;
+        search_t *s = new_search(dta);
+        s->attribs = attribs;
+        s->tnfs_slot = slot;
+        s->tnfs_handle = h;
+        s->open = true;
+        make_pattern(pattern, s->name, s->ext);
+        int16_t found = next_match(s, dta_out);
+        return found == GEMDOS_ENMFIL ? GEMDOS_EFILNF : found;
+    }
     if (!sd_ready() || !to_fat(slot, adir[0] ? adir : ".", fat, sizeof(fat)))
         return GEMDOS_EPTHNF;
 
@@ -410,8 +508,7 @@ bool fs_dta_release(uint32_t dta)
     search_t *s = find_search(dta);
     if (!s)
         return false;
-    if (s->open && !s->flash)
-        f_closedir(&s->dir);
+    search_close(s);
     memset(s, 0, sizeof(*s));
     return true;
 }
@@ -439,10 +536,40 @@ int32_t fs_fopen(int slot, const char *path, uint16_t mode)
             if (s_files[i].used)
                 continue;
             s_files[i].used = true;
+            s_files[i].tnfs_slot = -1;
             s_files[i].flash = ff;
             s_files[i].pos = 0;
             s_files[i].time = FLASH_TIME;
             s_files[i].date = FLASH_DATE;
+            return FIRST_FILE_DESCRIPTOR + i;
+        }
+        return GEMDOS_ENHNDL;
+    }
+    if (slot >= 0 && slot < FS_MAX_SLOTS && s_is_tnfs[slot]) {
+        if (!s_files || !to_fat(slot, path, fat, sizeof(fat)))
+            return GEMDOS_EFILNF;
+        for (int i = 0; i < MAX_FILES; i++) {
+            if (s_files[i].used)
+                continue;
+            uint32_t size = 0, mtime = 0;
+            bool is_dir = false;
+            int r = tnfs_stat(slot, fat, &size, &mtime, &is_dir);
+            if (r < 0)
+                return r == GEMDOS_EPTHNF ? GEMDOS_EFILNF : r;
+            if (is_dir)
+                return GEMDOS_EFILNF;
+            uint8_t h;
+            r = tnfs_file_open(slot, fat, &h);
+            if (r < 0)
+                return r;
+            file_t *f = &s_files[i];
+            f->used = true;
+            f->flash = NULL;
+            f->tnfs_slot = slot;
+            f->tnfs_handle = h;
+            f->size = size;
+            f->pos = 0;
+            unix_to_dos(mtime, &f->date, &f->time);
             return FIRST_FILE_DESCRIPTOR + i;
         }
         return GEMDOS_ENHNDL;
@@ -462,6 +589,7 @@ int32_t fs_fopen(int slot, const char *path, uint16_t mode)
             return fresult_to_gemdos(fr);
         s_files[i].used = true;
         s_files[i].flash = NULL;
+        s_files[i].tnfs_slot = -1;
         s_files[i].time = fno.ftime;
         s_files[i].date = fno.fdate;
         return FIRST_FILE_DESCRIPTOR + i;
@@ -474,6 +602,12 @@ int32_t fs_fread(uint16_t handle, uint8_t *buf, uint32_t len)
     file_t *f = get_file(handle);
     if (!f)
         return GEMDOS_EIHNDL;
+    if (f->tnfs_slot >= 0) {
+        int n = tnfs_file_read(f->tnfs_slot, f->tnfs_handle, buf, len);
+        if (n > 0)
+            f->pos += n;
+        return n;
+    }
     if (f->flash) {
         uint32_t left = f->flash->size - f->pos;
         if (len > left)
@@ -492,7 +626,9 @@ int16_t fs_fclose(uint16_t handle)
     file_t *f = get_file(handle);
     if (!f)
         return GEMDOS_EIHNDL;
-    if (!f->flash)
+    if (f->tnfs_slot >= 0)
+        tnfs_file_close(f->tnfs_slot, f->tnfs_handle);
+    else if (!f->flash)
         f_close(&f->fil);
     f->used = false;
     return GEMDOS_EOK;
@@ -504,16 +640,22 @@ int32_t fs_fseek(uint16_t handle, int32_t offset, uint16_t mode)
     if (!f)
         return GEMDOS_EIHNDL;
     int64_t pos = offset;
-    int64_t size = f->flash ? f->flash->size : f_size(&f->fil);
+    bool own_pos = f->flash || f->tnfs_slot >= 0;
+    int64_t size = f->flash ? f->flash->size : f->tnfs_slot >= 0 ? f->size : f_size(&f->fil);
     if (mode == 1)
-        pos += f->flash ? f->pos : f_tell(&f->fil);
+        pos += own_pos ? f->pos : f_tell(&f->fil);
     else if (mode == 2)
         pos += size;
     else if (mode != 0)
         return GEMDOS_EINVFN;
     if (pos < 0 || pos > size)
         return GEMDOS_ERANGE;
-    if (f->flash) {
+    if (f->tnfs_slot >= 0) {
+        int r = tnfs_file_seek(f->tnfs_slot, f->tnfs_handle, pos);
+        if (r < 0)
+            return r;
+    }
+    if (own_pos) {
         f->pos = pos;
         return pos;
     }
@@ -541,6 +683,16 @@ int32_t fs_fattrib(int slot, const char *path, uint16_t flag, uint16_t attr)
             return FA_ST_DIR;
         return flash_find(path) ? AM_RDO : GEMDOS_EFILNF;
     }
+    if (slot >= 0 && slot < FS_MAX_SLOTS && s_is_tnfs[slot]) {
+        uint32_t size, mtime;
+        bool is_dir;
+        if (!to_fat(slot, path, fat, sizeof(fat)))
+            return GEMDOS_EFILNF;
+        int r = tnfs_stat(slot, fat, &size, &mtime, &is_dir);
+        if (r < 0)
+            return r == GEMDOS_EPTHNF ? GEMDOS_EFILNF : r;
+        return is_dir ? FA_ST_DIR : 0;
+    }
     if (!sd_ready() || !to_fat(slot, path, fat, sizeof(fat)))
         return GEMDOS_EFILNF;
     if (!strcmp(fat, s_root[slot]))
@@ -557,9 +709,18 @@ int16_t fs_dsetpath(int slot, const char *path)
     char fat[MAX_PATH];
     if (slot == s_flash_slot)
         return flash_is_root(path) ? GEMDOS_EOK : GEMDOS_EPTHNF;
-    if (!sd_ready() || !to_fat(slot, path, fat, sizeof(fat)))
+    if (slot >= 0 && slot < FS_MAX_SLOTS && s_is_tnfs[slot]) {
+        uint32_t size, mtime;
+        bool is_dir = false;
+        if (!to_fat(slot, path, fat, sizeof(fat)))
+            return GEMDOS_EPTHNF;
+        if (strcmp(fat, "/") && (tnfs_stat(slot, fat, &size, &mtime, &is_dir) < 0 || !is_dir))
+            return GEMDOS_EPTHNF;
+        if (!strcmp(fat, "/"))
+            fat[0] = 0;
+    } else if (!sd_ready() || !to_fat(slot, path, fat, sizeof(fat))) {
         return GEMDOS_EPTHNF;
-    if (strcmp(fat, s_root[slot])) {
+    } else if (strcmp(fat, s_root[slot])) {
         FILINFO fno;
         if (f_stat(fat, &fno) != FR_OK || !(fno.fattrib & AM_DIR))
             return GEMDOS_EPTHNF;

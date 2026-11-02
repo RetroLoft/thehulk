@@ -1,5 +1,5 @@
 // GEMDRIVE storage: the GEMDOS calls for the cartridge drives, by drive slot. A slot is a
-// folder on the microSD card, or the flash drive with the configuration program.
+// folder on the microSD card, a TNFS share, or the flash drive with the configuration program.
 // Read-only for now: everything that would change the card returns EACCDN.
 // Paths are Atari paths ("C:\DIR\FILE.PRG", or relative to the current folder);
 // results are GEMDOS error codes (negative) or values.
@@ -12,6 +12,7 @@
 #define FS_MAX_SLOTS 9
 
 void fs_set_sd_slot(int slot, const char *sd_path);
+void fs_set_tnfs_slot(int slot, const char *host, uint16_t port, const char *mount);
 void fs_set_flash_slot(int slot);
 void fs_reset(void);
 

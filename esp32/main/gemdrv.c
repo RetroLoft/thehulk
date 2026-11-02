@@ -344,18 +344,19 @@ void gemdrv_init(void)
 #endif
     WRITE_WORD(m, GEMDRVEMUL_FLOPPY_SESSION_INSTALL_FLOPPY, 0);
 
-    // The drives from the settings, then the flash drive with the configuration program.
-    // TNFS drives come later: not installed yet.
+    // The drives from the settings, then the flash drive with the configuration program
     int slots = 0;
     for (int i = 0; i < SETTINGS_MAX_DRIVES; i++) {
         const settings_drive_t *d = settings_drive(i);
         if (d->state != SETTINGS_DRIVE_ENABLED)
             continue;
-        if (d->type != SETTINGS_TYPE_SD) {
-            ESP_LOGW(TAG, "drive %c: is TNFS, not available yet", d->letter);
-            continue;
+        if (d->type == SETTINGS_TYPE_TNFS) {
+            if (d->transport != 0)
+                ESP_LOGW(TAG, "drive %c: TCP is not there yet, using UDP", d->letter);
+            fs_set_tnfs_slot(slots, d->host, d->port, d->mount_path);
+        } else {
+            fs_set_sd_slot(slots, d->sd_path);
         }
-        fs_set_sd_slot(slots, d->sd_path);
         s_slot_drive[slots++] = d->letter - 'A';
     }
     fs_set_flash_slot(slots);
