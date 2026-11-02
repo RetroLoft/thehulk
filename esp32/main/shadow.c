@@ -15,9 +15,10 @@ static uint8_t *s_synced;    // what the SPRAM holds
 static uint8_t s_buf[4096];  // big-endian bounce buffer for the SPI
 
 // What a command can change without shadow_mark: the first block of ROM3 (token, status
-// words, DTA) and the status block behind the read buffer (with the shared variables)
+// words, DTA) and the status block behind the read buffer (with the shared variables and
+// the answers for the configuration program)
 #define SYNC_STATUS_START  0x4000
-#define SYNC_STATUS_LEN    0x400
+#define SYNC_STATUS_LEN    0x600
 
 static uint32_t s_mark_lo = HULK_ROM_SIZE, s_mark_hi;
 

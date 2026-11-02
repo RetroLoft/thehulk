@@ -60,6 +60,35 @@
 #define GEMDRVEMUL_FLOPPY_SESSION_OLD_HDV_MEDIACH   0x09bf8
 #define GEMDRVEMUL_FLOPPY_SESSION_OLD_XBIOS_VECTOR  0x09bfc
 
+// The configuration program (atari/config/src/sidetnfs_probe.c)
+#define GEMDRVEMUL_CONFIG_VERSION                   0x04398
+#define GEMDRVEMUL_CONFIG_MAX_DRIVES                0x0439c
+#define GEMDRVEMUL_CONFIG_DRIVE_COUNT               0x043a0
+#define GEMDRVEMUL_CONFIG_DRIVE_LETTER              0x043a4
+#define GEMDRVEMUL_CONFIG_STATUS                    0x043a8
+#define GEMDRVEMUL_CONFIG_DRV_STATUS                0x043ac
+#define GEMDRVEMUL_CONFIG_DRV_STATE                 0x043b0
+#define GEMDRVEMUL_CONFIG_DRV_LETTER                0x043b2
+#define GEMDRVEMUL_CONFIG_DRV_TYPE                  0x043b4
+#define GEMDRVEMUL_CONFIG_DRV_TRANSPORT             0x043b6
+#define GEMDRVEMUL_CONFIG_DRV_PORT                  0x043b8
+#define GEMDRVEMUL_CONFIG_DRV_NICKNAME              0x043ba
+#define GEMDRVEMUL_CONFIG_DRV_HOST                  0x043d2
+#define GEMDRVEMUL_CONFIG_DRV_MOUNT                 0x04412
+#define GEMDRVEMUL_CONFIG_DRV_SD_PATH               0x04432
+#define CONFIG_NICKNAME_LEN   24
+#define CONFIG_HOST_LEN       64
+#define CONFIG_MOUNT_LEN      32
+#define CONFIG_SD_PATH_LEN    64
+#define CONFIG_PROTOCOL_VERSION  3
+#define CONFIG_MAX_DRIVES        8
+#define CONFIG_DRIVE_EMPTY       0
+#define CONFIG_DRIVE_ENABLED     2
+#define CONFIG_DRIVE_TYPE_SD     1
+#define CONFIG_STATUS_OK                  0
+#define CONFIG_STATUS_INVALID_INDEX       1
+#define CONFIG_STATUS_FLASH_WRITE_FAILED  12
+
 // Status long words (GEMDRV_STATUS_* in gemdrive.s)
 #define GEMDRV_STATUS_BUSY      0x00000000
 #define GEMDRV_STATUS_FAILED    0x00000001
@@ -134,6 +163,12 @@
 #define GEMDRVEMUL_FSNEXT_CALL              0x044f
 #define GEMDRVEMUL_FRENAME_CALL             0x0456
 #define GEMDRVEMUL_FDATETIME_CALL           0x0457
+#define GEMDRVEMUL_CONFIG_GET_INFO          0x040d
+#define GEMDRVEMUL_CONFIG_GET_DRIVE         0x040e
+#define GEMDRVEMUL_CONFIG_SET_DRIVE         0x040f
+#define GEMDRVEMUL_CONFIG_DELETE_DRIVE      0x0410
+#define GEMDRVEMUL_CONFIG_SET_CONFIG_DRIVE  0x0411
+#define GEMDRVEMUL_CONFIG_SAVE              0x0412
 #define GEMDRVEMUL_READ_BUFF_CALL           0x0481
 #define GEMDRVEMUL_DEBUG                    0x0482
 #define GEMDRVEMUL_SAVE_BASEPAGE            0x0483

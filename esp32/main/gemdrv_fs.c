@@ -1,9 +1,11 @@
-// GEMDRIVE storage on the microSD card, see gemdrv_fs.h. Uses FatFs directly (not the
-// VFS): it gives the DOS date/time and the FAT attributes, which are the GEMDOS ones.
+// GEMDRIVE storage, see gemdrv_fs.h. The SD drive uses FatFs directly (not the VFS): it
+// gives the DOS date/time and the FAT attributes, which are the GEMDOS ones. The flash
+// drive is a fixed list of files in the firmware.
 #include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include "esp_log.h"
 #include "ff.h"
 #include "gemdrv_fs.h"
@@ -26,9 +28,30 @@ static const char *TAG = "gemdrv_fs";
 
 static char s_cwd[MAX_PATH];        // current folder, Atari form: "" or "\DIR\SUB"
 
+// The flash drive: one folder, read-only
+extern const uint8_t thehulk_prg_start[] asm("_binary_THEHULK_PRG_start");
+extern const uint8_t thehulk_prg_end[]   asm("_binary_THEHULK_PRG_end");
+#define FLASH_TIME  (12 << 11)
+#define FLASH_DATE  (((2026 - 1980) << 9) | (11 << 5) | 2)
+
+typedef struct {
+    const char *name;
+    const uint8_t *data;
+    uint32_t size;
+} flash_file_t;
+static flash_file_t s_flash[1];
+
+static void flash_files_init(void)
+{
+    s_flash[0] = (flash_file_t){ "THEHULK.PRG", thehulk_prg_start,
+                                 (uint32_t)(thehulk_prg_end - thehulk_prg_start) };
+}
+
 typedef struct {
     bool used;
     FIL fil;
+    const flash_file_t *flash;      // on the flash drive: no FIL
+    uint32_t pos;
     uint16_t time, date;
 } file_t;
 static file_t *s_files;             // handle = FIRST_FILE_DESCRIPTOR + index
@@ -36,6 +59,8 @@ static file_t *s_files;             // handle = FIRST_FILE_DESCRIPTOR + index
 typedef struct {
     uint32_t dta;                   // 0: free
     bool open;                      // directory still open (not at its end)
+    bool flash;                     // on the flash drive: no FF_DIR
+    int flash_next;
     FF_DIR dir;
     char name[8], ext[3];           // pattern, '?' for any character
     uint8_t attribs;
@@ -47,15 +72,16 @@ static uint32_t s_age;
 void fs_reset(void)
 {
     s_cwd[0] = 0;
+    flash_files_init();
     if (!s_files)
         s_files = calloc(MAX_FILES, sizeof(file_t));
     for (int i = 0; s_files && i < MAX_FILES; i++) {
-        if (s_files[i].used)
+        if (s_files[i].used && !s_files[i].flash)
             f_close(&s_files[i].fil);
         s_files[i].used = false;
     }
     for (int i = 0; i < MAX_SEARCH; i++) {
-        if (s_search[i].open)
+        if (s_search[i].open && !s_search[i].flash)
             f_closedir(&s_search[i].dir);
         s_search[i].dta = 0;
         s_search[i].open = false;
@@ -233,7 +259,7 @@ static search_t *new_search(uint32_t dta)
                 s = &s_search[i];       // all in use: reuse the oldest
         }
     }
-    if (s->open)
+    if (s->open && !s->flash)
         f_closedir(&s->dir);
     memset(s, 0, sizeof(*s));
     s->dta = dta;
@@ -261,7 +287,24 @@ static void fill_dta(uint8_t *d, const FILINFO *fno)
 static int16_t next_match(search_t *s, uint8_t *dta_out)
 {
     FILINFO fno;
-    while (s->open) {
+    while (s->open && s->flash) {
+        if (s->flash_next >= (int)(sizeof(s_flash) / sizeof(s_flash[0]))) {
+            s->open = false;
+            break;
+        }
+        const flash_file_t *f = &s_flash[s->flash_next++];
+        if (match(s, f->name) && attribs_ok(s->attribs, AM_RDO)) {
+            memset(&fno, 0, sizeof(fno));
+            fno.fsize = f->size;
+            fno.ftime = FLASH_TIME;
+            fno.fdate = FLASH_DATE;
+            fno.fattrib = AM_RDO;
+            strncpy(fno.fname, f->name, sizeof(fno.fname) - 1);
+            fill_dta(dta_out, &fno);
+            return GEMDOS_EOK;
+        }
+    }
+    while (s->open && !s->flash) {
         if (f_readdir(&s->dir, &fno) != FR_OK || !fno.fname[0]) {
             f_closedir(&s->dir);
             s->open = false;
@@ -276,12 +319,44 @@ static int16_t next_match(search_t *s, uint8_t *dta_out)
     return GEMDOS_ENMFIL;
 }
 
-int16_t fs_fsfirst(uint32_t dta, const char *path, uint16_t attribs, uint8_t *dta_out)
+// The flash drive has one folder: true for "", "\\", "S:" and "S:\\"
+static bool flash_is_root(const char *apath)
+{
+    if (isalpha((unsigned char)apath[0]) && apath[1] == ':')
+        apath += 2;
+    return !apath[0] || (apath[0] == '\\' && !apath[1]) || !strcmp(apath, ".");
+}
+
+// The file name in a flash drive path, NULL when it is not in the root
+static const flash_file_t *flash_find(const char *apath)
+{
+    if (isalpha((unsigned char)apath[0]) && apath[1] == ':')
+        apath += 2;
+    if (*apath == '\\')
+        apath++;
+    for (size_t i = 0; i < sizeof(s_flash) / sizeof(s_flash[0]); i++)
+        if (!strcasecmp(apath, s_flash[i].name))
+            return &s_flash[i];
+    return NULL;
+}
+
+int16_t fs_fsfirst(int slot, uint32_t dta, const char *path, uint16_t attribs, uint8_t *dta_out)
 {
     char adir[MAX_PATH], fat[MAX_PATH];
     const char *pattern;
     memset(dta_out, 0, FS_DTA_SIZE);
     split_pattern(path, adir, sizeof(adir), &pattern);
+    if (slot == FS_SLOT_FLASH) {
+        if (!flash_is_root(adir))
+            return GEMDOS_EPTHNF;
+        search_t *s = new_search(dta);
+        s->attribs = attribs;
+        s->flash = true;
+        s->open = true;
+        make_pattern(pattern, s->name, s->ext);
+        int16_t r = next_match(s, dta_out);
+        return r == GEMDOS_ENMFIL ? GEMDOS_EFILNF : r;
+    }
     if (!sd_ready() || !to_fat(adir[0] ? adir : ".", fat, sizeof(fat)))
         return GEMDOS_EPTHNF;
 
@@ -316,7 +391,7 @@ bool fs_dta_release(uint32_t dta)
     search_t *s = find_search(dta);
     if (!s)
         return false;
-    if (s->open)
+    if (s->open && !s->flash)
         f_closedir(&s->dir);
     memset(s, 0, sizeof(*s));
     return true;
@@ -332,11 +407,27 @@ static file_t *get_file(uint16_t handle)
     return &s_files[i];
 }
 
-int32_t fs_fopen(const char *path, uint16_t mode)
+int32_t fs_fopen(int slot, const char *path, uint16_t mode)
 {
     char fat[MAX_PATH];
     if ((mode & 3) != 0)
         return GEMDOS_EACCDN;           // read-only for now
+    if (slot == FS_SLOT_FLASH) {
+        const flash_file_t *ff = flash_find(path);
+        if (!ff || !s_files)
+            return GEMDOS_EFILNF;
+        for (int i = 0; i < MAX_FILES; i++) {
+            if (s_files[i].used)
+                continue;
+            s_files[i].used = true;
+            s_files[i].flash = ff;
+            s_files[i].pos = 0;
+            s_files[i].time = FLASH_TIME;
+            s_files[i].date = FLASH_DATE;
+            return FIRST_FILE_DESCRIPTOR + i;
+        }
+        return GEMDOS_ENHNDL;
+    }
     if (!sd_ready() || !s_files || !to_fat(path, fat, sizeof(fat)))
         return GEMDOS_EFILNF;
     for (int i = 0; i < MAX_FILES; i++) {
@@ -351,6 +442,7 @@ int32_t fs_fopen(const char *path, uint16_t mode)
         if (fr != FR_OK)
             return fresult_to_gemdos(fr);
         s_files[i].used = true;
+        s_files[i].flash = NULL;
         s_files[i].time = fno.ftime;
         s_files[i].date = fno.fdate;
         return FIRST_FILE_DESCRIPTOR + i;
@@ -363,6 +455,14 @@ int32_t fs_fread(uint16_t handle, uint8_t *buf, uint32_t len)
     file_t *f = get_file(handle);
     if (!f)
         return GEMDOS_EIHNDL;
+    if (f->flash) {
+        uint32_t left = f->flash->size - f->pos;
+        if (len > left)
+            len = left;
+        memcpy(buf, f->flash->data + f->pos, len);
+        f->pos += len;
+        return len;
+    }
     UINT n = 0;
     FRESULT fr = f_read(&f->fil, buf, len, &n);
     return fr == FR_OK ? (int32_t)n : fresult_to_gemdos(fr);
@@ -373,7 +473,8 @@ int16_t fs_fclose(uint16_t handle)
     file_t *f = get_file(handle);
     if (!f)
         return GEMDOS_EIHNDL;
-    f_close(&f->fil);
+    if (!f->flash)
+        f_close(&f->fil);
     f->used = false;
     return GEMDOS_EOK;
 }
@@ -384,14 +485,19 @@ int32_t fs_fseek(uint16_t handle, int32_t offset, uint16_t mode)
     if (!f)
         return GEMDOS_EIHNDL;
     int64_t pos = offset;
+    int64_t size = f->flash ? f->flash->size : f_size(&f->fil);
     if (mode == 1)
-        pos += f_tell(&f->fil);
+        pos += f->flash ? f->pos : f_tell(&f->fil);
     else if (mode == 2)
-        pos += f_size(&f->fil);
+        pos += size;
     else if (mode != 0)
         return GEMDOS_EINVFN;
-    if (pos < 0 || pos > (int64_t)f_size(&f->fil))
+    if (pos < 0 || pos > size)
         return GEMDOS_ERANGE;
+    if (f->flash) {
+        f->pos = pos;
+        return pos;
+    }
     FRESULT fr = f_lseek(&f->fil, pos);
     return fr == FR_OK ? (int32_t)pos : fresult_to_gemdos(fr);
 }
@@ -406,11 +512,16 @@ int32_t fs_fdatime(uint16_t handle, uint16_t *time, uint16_t *date)
     return GEMDOS_EOK;
 }
 
-int32_t fs_fattrib(const char *path, uint16_t flag, uint16_t attr)
+int32_t fs_fattrib(int slot, const char *path, uint16_t flag, uint16_t attr)
 {
     char fat[MAX_PATH];
     if (flag)
         return GEMDOS_EACCDN;           // setting attributes: read-only for now
+    if (slot == FS_SLOT_FLASH) {
+        if (flash_is_root(path))
+            return FA_ST_DIR;
+        return flash_find(path) ? AM_RDO : GEMDOS_EFILNF;
+    }
     if (!sd_ready() || !to_fat(path, fat, sizeof(fat)))
         return GEMDOS_EFILNF;
     if (!strcmp(fat, ROOT))
@@ -422,9 +533,11 @@ int32_t fs_fattrib(const char *path, uint16_t flag, uint16_t attr)
 
 // --- Current folder -----------------------------------------------------------------
 
-int16_t fs_dsetpath(const char *path)
+int16_t fs_dsetpath(int slot, const char *path)
 {
     char fat[MAX_PATH];
+    if (slot == FS_SLOT_FLASH)
+        return flash_is_root(path) ? GEMDOS_EOK : GEMDOS_EPTHNF;
     if (!sd_ready() || !to_fat(path, fat, sizeof(fat)))
         return GEMDOS_EPTHNF;
     if (strcmp(fat, ROOT)) {
@@ -442,7 +555,7 @@ int16_t fs_dsetpath(const char *path)
     return GEMDOS_EOK;
 }
 
-const char *fs_dgetpath(void)
+const char *fs_dgetpath(int slot)
 {
-    return s_cwd;
+    return slot == FS_SLOT_FLASH ? "" : s_cwd;
 }

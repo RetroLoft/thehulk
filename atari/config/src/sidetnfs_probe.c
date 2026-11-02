@@ -243,6 +243,15 @@ static unsigned long rom3_read_long(unsigned long offset)
     return *((volatile unsigned long *)(ROM3_BASE + offset));
 }
 
+/* TheHulk: one 16-bit word as two reads on even addresses, high byte first
+ * (0xFB0000 + 2 * byte). A0 is never used: the Falcon drives /UDS and /LDS
+ * low on every read of the cartridge port. Same as send_word in GEMDRIVE. */
+static void send_word(unsigned long word)
+{
+    (void)rom3_read(((word >> 8) & 0xFFUL) * 2UL);
+    (void)rom3_read((word & 0xFFUL) * 2UL);
+}
+
 /* Bounded Vsync() poll for the firmware to echo `seed` back at
  * RANDOM_TOKEN_OFFSET. Returns 1 on match, 0 on timeout. */
 static int wait_for_token(unsigned long seed, int timeout_sec)
@@ -270,11 +279,11 @@ static unsigned long send_command_start(unsigned long command, unsigned long tot
     unsigned long seed = rom3_read_long(RANDOM_TOKEN_SEED_OFFSET);
 
     (void)rom3_read(ROM3_PROTOCOL_HEADER);
-    (void)rom3_read(command);
-    (void)rom3_read(total_payload_bytes + 4UL);
+    send_word(command);
+    send_word(total_payload_bytes + 4UL);
 
-    (void)rom3_read(seed & 0xFFFFUL);
-    (void)rom3_read((seed >> 16) & 0xFFFFUL);
+    send_word(seed & 0xFFFFUL);
+    send_word((seed >> 16) & 0xFFFFUL);
 
     return seed;
 }
@@ -283,22 +292,18 @@ static unsigned long send_command_start(unsigned long command, unsigned long tot
  * GET_PAYLOAD_PARAM32). */
 static void send_param32(unsigned long value)
 {
-    (void)rom3_read(value & 0xFFFFUL);
-    (void)rom3_read((value >> 16) & 0xFFFFUL);
+    send_word(value & 0xFFFFUL);
+    send_word((value >> 16) & 0xFFFFUL);
 }
 
-/* One 16-bit request parameter: a single raw-value read (matches
- * GET_PAYLOAD_PARAM16 = payload[0], no reassembly). */
+/* One 16-bit request parameter (matches GET_PAYLOAD_PARAM16 = payload[0]). */
 static void send_param16(unsigned long value)
 {
-    (void)rom3_read(value & 0xFFFFUL);
+    send_word(value & 0xFFFFUL);
 }
 
-/* A fixed-length string field, sent two raw source bytes at a time,
- * packed big-endian ((b0<<8)|b1), matching
- * send_sync_write_command_to_sidecart's word-copy loop. len must be
- * even (all four string fields are). The firmware's
- * COPY_AND_CHANGE_ENDIANESS_BLOCK16 restores the original byte order. */
+/* A fixed-length string field, two raw source bytes per word, big-endian
+ * ((b0<<8)|b1). len must be even (all four string fields are). */
 static void send_string_field(const char *s, int len)
 {
     int i;
@@ -307,7 +312,7 @@ static void send_string_field(const char *s, int len)
     for (i = 0; i < len; i += 2) {
         b0 = (unsigned char)s[i];
         b1 = (unsigned char)s[i + 1];
-        (void)rom3_read(((unsigned long)b0 << 8) | (unsigned long)b1);
+        send_word(((unsigned long)b0 << 8) | (unsigned long)b1);
     }
 }
 

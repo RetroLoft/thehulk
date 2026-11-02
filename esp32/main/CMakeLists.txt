@@ -9,6 +9,13 @@ if(NOT EXISTS "${FPGA_BITSTREAM}")
 endif()
 target_add_binary_data(${COMPONENT_TARGET} "${FPGA_BITSTREAM}" BINARY)
 
+# The configuration program on the flash drive, built by ../atari/config (make)
+set(HULK_CONFIG_PRG "${CMAKE_CURRENT_LIST_DIR}/../../atari/config/THEHULK.PRG")
+if(NOT EXISTS "${HULK_CONFIG_PRG}")
+    message(FATAL_ERROR "Configuration program not found: ${HULK_CONFIG_PRG}\nRun make in atari/config first.")
+endif()
+target_add_binary_data(${COMPONENT_TARGET} "${HULK_CONFIG_PRG}" BINARY)
+
 # Cartridge image: GEMDRIVE, built by ../atari/gemdrive. Override with -DHULK_ROM_IMAGE=<file>.
 set(HULK_ROM_IMAGE "${CMAKE_CURRENT_LIST_DIR}/../../atari/gemdrive/dist/GEMDRIVE.BIN" CACHE FILEPATH "Cartridge image")
 if(NOT EXISTS "${HULK_ROM_IMAGE}")
