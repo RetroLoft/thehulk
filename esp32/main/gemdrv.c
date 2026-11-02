@@ -223,6 +223,14 @@ static void debug_command(const hulk_packet_t *pkt)
         log_trace(pkt, addr & 0xFF);
         return;
     }
+    if ((addr >> 16) == 0x5354) {       // the deepest use of the hook stack so far
+        static uint32_t s_stack_used;
+        if ((addr & 0xFFFF) > s_stack_used || (addr & 0xFFFF) < s_stack_used / 2) {
+            s_stack_used = addr & 0xFFFF;
+            ESP_LOGI(TAG, "hook stack: %lu bytes used", (unsigned long)s_stack_used);
+        }
+        return;
+    }
     if (addr == 0x380)
         log_crash_info(pkt);
     else

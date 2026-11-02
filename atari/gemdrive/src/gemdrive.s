@@ -105,6 +105,7 @@ RANDOM_TOKEN_ADDR:      equ (ROM_EXCHG_BUFFER_ADDR)
 RANDOM_TOKEN_SEED_ADDR: equ (RANDOM_TOKEN_ADDR + 4) ; RANDOM_TOKEN_ADDR + 0 bytes
 CODE_BUFFER_SIZE:       equ 64        ; Bytes of RAM for the token wait code
 HOOK_STACK_SIZE:        equ 2048      ; Bytes of RAM for the stack of the GEMDOS hook, also holds its temporary data
+HOOK_STACK_FILL:        equ $48554C4B ; TheHulk diagnostics: what is still there has not been used
 RANDOM_TOKEN_POST_WAIT: equ $1        ; Wait this cycles after the random number generator is ready
 
 CMD_MAGIC_NUMBER        equ (ROM3_START_ADDR + $ABCD)       ; Magic number to identify a command
@@ -371,6 +372,30 @@ trace_call          macro
 .\@trace_skip:
                     endm
 
+; TheHulk diagnostics: tells the ESP32 how much of the hook stack has been used so far, also
+; by TOS, disk drivers and interrupts that run on it
+stack_report        macro
+                    tst.l (GEMDRVEMUL_SHARED_VARIABLES + (SHARED_VARIABLE_NO_INSTALL * 4))
+                    beq .\@stack_report_skip
+                    move.l (GEMDRVEMUL_SHARED_VARIABLES + (SHARED_VARIABLE_HOOK_STACK * 4)), d3
+                    beq .\@stack_report_skip
+                    move.l a0, -(sp)
+                    move.l d3, a4
+                    lea -HOOK_STACK_SIZE(a4), a4
+                    move.w #(HOOK_STACK_SIZE / 4) - 1, d0
+                    move.l #HOOK_STACK_SIZE, d3
+.\@stack_report_scan:
+                    cmp.l #HOOK_STACK_FILL, (a4)+
+                    bne.s .\@stack_report_send
+                    subq.l #4, d3
+                    dbf d0, .\@stack_report_scan
+.\@stack_report_send:
+                    or.l #$53540000, d3
+                    send_sync CMD_DEBUG, 4
+                    move.l (sp)+, a0
+.\@stack_report_skip:
+                    endm
+
 ; TheHulk: Dgetdrv and Fgetdta need no reentry lock, which costs two commands: the hook
 ; does not handle them, so the nested call just passes through it, on the hook stack.
 ; Check if the current GEMDOS drive is one of the emulated drives. If not,
@@ -501,6 +526,14 @@ _ping_ready:
     add.l #CODE_BUFFER_SIZE + HOOK_STACK_SIZE, d4
     move.l #SHARED_VARIABLE_HOOK_STACK, d3
     send_sync CMD_SET_SHARED_VAR, 8
+    tst.l (GEMDRVEMUL_SHARED_VARIABLES + (SHARED_VARIABLE_NO_INSTALL * 4))
+    beq.s .code_buffer_done
+    move.l (GEMDRVEMUL_SHARED_VARIABLES + (SHARED_VARIABLE_HOOK_STACK * 4)), a4
+    lea -HOOK_STACK_SIZE(a4), a4
+    move.w #(HOOK_STACK_SIZE / 4) - 1, d0
+.hook_stack_fill:
+    move.l #HOOK_STACK_FILL, (a4)+
+    dbf d0, .hook_stack_fill
 .code_buffer_done:
 
 ; TheHulk: hand the processor state saved by the last crash (bombs) to the ESP32 log:
@@ -1538,6 +1571,7 @@ _notlong:
     return_interrupt_l GEMDRVEMUL_FOPEN_HANDLE    ; Return the error code from the Sidecart
 
 .Fclose:
+    stack_report
     trace_call (GEMDRVEMUL_SHARED_VARIABLES + (SHARED_VARIABLE_TRACE_BUFFER * 4)), 512, 0
     move.w 8(a0),d3                      ; get the file handle
     and.l #$FFFF, d3                     ; Mask the upper word of the file handle
