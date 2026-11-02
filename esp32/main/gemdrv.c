@@ -474,7 +474,7 @@ void gemdrv_command(const hulk_packet_t *pkt)
         ESP_LOGW(TAG, "floppy command 0x%04x while the floppy emulation is off", pkt->cmd);
         break;
 
-    // --- The drive: folder HD of the microSD card, read-only (gemdrv_fs.c) -----------
+    // --- The drive: folder HD of the microSD card (gemdrv_fs.c) -----------
     case GEMDRVEMUL_FSFIRST_CALL: {
         char path[192];
         uint8_t dta_out[FS_DTA_SIZE];
@@ -536,9 +536,8 @@ void gemdrv_command(const hulk_packet_t *pkt)
     }
     case GEMDRVEMUL_FDATETIME_CALL: {
         // Flag in d3 (non-zero: set the date), handle in d4, in d5 the date and time to set.
-        // TNFS cannot set a date: accepted, so copying a file works.
         uint16_t time = payloadPtr[5], date = payloadPtr[4];
-        int32_t r = payloadPtr[0] ? (fs_writable(payloadPtr[2]) ? GEMDOS_EOK : GEMDOS_EACCDN)
+        int32_t r = payloadPtr[0] ? fs_fdatime_set(payloadPtr[2], time, date)
                                   : fs_fdatime(payloadPtr[2], &time, &date);
         WRITE_AND_SWAP_LONGWORD(m, GEMDRVEMUL_FDATETIME_TIME, time);
         WRITE_AND_SWAP_LONGWORD(m, GEMDRVEMUL_FDATETIME_DATE, date);
@@ -588,8 +587,7 @@ void gemdrv_command(const hulk_packet_t *pkt)
         break;
     }
     case GEMDRVEMUL_DFREE_CALL:
-        // Free clusters, total clusters, bytes per sector, sectors per cluster. On a read-only
-        // drive nothing is free; counting the clusters of a big card would take too long.
+        // Free clusters, total clusters, bytes per sector, sectors per cluster
     {
         uint32_t free_clusters = fs_free_clusters(slot_of_drive(payloadPtr[0]));
         WRITE_AND_SWAP_LONGWORD(m, GEMDRVEMUL_DFREE_STRUCT, free_clusters);

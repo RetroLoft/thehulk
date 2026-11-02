@@ -1,7 +1,7 @@
 // GEMDRIVE storage: the GEMDOS calls for the cartridge drives, by drive slot. A slot is a
 // folder on the microSD card, a TNFS share, or the flash drive with the configuration program.
-// The card and the flash drive are read-only: everything that would change them returns
-// EACCDN. A TNFS drive can be written.
+// The flash drive is read-only: everything that would change it returns EACCDN. The card
+// and a TNFS drive can be written.
 // Paths are Atari paths ("C:\DIR\FILE.PRG", or relative to the current folder);
 // results are GEMDOS error codes (negative) or values.
 #pragma once
@@ -29,7 +29,6 @@ int32_t fs_fcreate(int slot, const char *path, uint16_t attr);
 // Writes at the file position; fs_fwrite_commit moves it on, after the checksum is confirmed
 int32_t fs_fwrite(uint16_t handle, const uint8_t *buf, uint32_t len);
 int16_t fs_fwrite_commit(uint16_t handle, uint32_t len);
-bool fs_writable(uint16_t handle);
 int16_t fs_fdelete(int slot, const char *path);
 int16_t fs_dcreate(int slot, const char *path);
 int16_t fs_ddelete(int slot, const char *path);
@@ -38,6 +37,7 @@ uint32_t fs_free_clusters(int slot);
 int16_t fs_fclose(uint16_t handle);
 int32_t fs_fseek(uint16_t handle, int32_t offset, uint16_t mode);
 int32_t fs_fdatime(uint16_t handle, uint16_t *time, uint16_t *date);
+int32_t fs_fdatime_set(uint16_t handle, uint16_t time, uint16_t date);
 int32_t fs_fattrib(int slot, const char *path, uint16_t flag, uint16_t attr);
 
 int16_t fs_dsetpath(int slot, const char *path);

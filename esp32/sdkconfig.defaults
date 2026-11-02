@@ -31,3 +31,6 @@ CONFIG_LWIP_TCPIP_TASK_AFFINITY_CPU1=y
 
 # NTP: the request at once, not after a random delay of up to 5 s (wifi.c waits 5 s per try)
 CONFIG_LWIP_SNTP_STARTUP_DELAY=n
+
+# gemdrv_poll runs in the main task: paths on the stack, on top of FatFs and lwIP
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192
