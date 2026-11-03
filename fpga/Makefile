@@ -24,7 +24,7 @@ all: $(OUT)/thehulk.bin
 
 $(OUT)/thehulk.json: $(SRCS)
 	@mkdir -p $(OUT)
-	$(YOSYS) -q -l $(OUT)/yosys.log -p "synth_ice40 -top $(TOP) -json $@" $(SRCS)
+	$(YOSYS) -q $(YOSYS_DEFS) -l $(OUT)/yosys.log -p "synth_ice40 -top $(TOP) -json $@" $(SRCS)
 
 $(OUT)/thehulk.asc: $(OUT)/thehulk.json $(PCF)
 	$(NEXTPNR) --up5k --package sg48 --json $< --pcf $(PCF) --asc $@ \

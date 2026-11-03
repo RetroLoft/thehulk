@@ -179,6 +179,13 @@ static void start_cartridge(void)
     gemdrv_init();
     sd_unlock();
 #endif
+#ifdef HULK_DIAG_HIGH
+    uint16_t *rom3 = (uint16_t *)(shadow_base() + SHADOW_ROM3);
+    for (int i = 0; i < 0x800; i++) {
+        rom3[(0x8000 / 2) + i] = 0xFFFF;    // $FB8000, GEMDRIVE uses neither range
+        rom3[(0x6000 / 2) + i] = 0x0000;    // $FB6000
+    }
+#endif
     s_rec.reset_reason = esp_reset_reason();
     s_rec.brownouts = bootrec_brownouts();
     s_rec.waited = !fpga_power_present();
@@ -236,8 +243,87 @@ static void start_cartridge(void)
     }
 }
 
+#ifdef HULK_DIAG_PATTERN
+#define DIAG_BLOCK 0x1000
+// The word at a ROM3 address, the same ranges as the DIAG_CONST gateware
+static uint16_t diag_rom3_word(uint32_t offset)
+{
+    static const uint16_t fixed[8] = { 0xFFFF, 0x0000, 0xAAAA, 0x5555, 0, 0x00FF, 0xFF00, 0x0001 };
+    int range = (offset >> 12) & 7;
+    return range == 4 ? ((offset & 2) ? 0xFFFF : 0x0000) : fixed[range];
+}
+
+static bool diag_fill(uint32_t base, uint16_t rom4_word, bool rom3)
+{
+    static uint8_t out[DIAG_BLOCK], in[DIAG_BLOCK];
+    for (uint32_t off = 0; off < 0x10000; off += DIAG_BLOCK) {
+        for (uint32_t i = 0; i < DIAG_BLOCK; i += 2) {
+            uint16_t w = rom3 ? diag_rom3_word(off + i) : rom4_word;
+            out[i] = w >> 8;
+            out[i + 1] = w & 0xFF;
+        }
+        if (hulk_write(base + off, out, DIAG_BLOCK) != ESP_OK ||
+            hulk_read(base + off, in, DIAG_BLOCK) != ESP_OK || memcmp(out, in, DIAG_BLOCK)) {
+            ESP_LOGE(TAG, "pattern readback differs at %05lx", (unsigned long)(base + off));
+            return false;
+        }
+    }
+    return true;
+}
+
+// ROM4 is all 0000, with status polls every tick like the normal main loop. ROM3 is in the
+// first run, and every other run after it, all 0000 except FFFF at $FB8000, like the normal
+// firmware: only the line "FFFF A15" of CARTCONS counts then. In the other runs it holds the
+// ranges of diag_rom3_word.
+static void diag_pattern_loop(void)
+{
+    static bool s_full;
+    for (;;) {
+        ESP_LOGI(TAG, "waiting for Atari power");
+        while (!fpga_power_present())
+            vTaskDelay(pdMS_TO_TICKS(5));
+        vTaskDelay(pdMS_TO_TICKS(10));
+        bool full = s_full;
+        s_full = !s_full;
+        bool ok = false;
+        for (int attempt = 0; attempt < 5 && !ok; attempt++) {
+            if (attempt) {
+                fpga_safe();
+                vTaskDelay(pdMS_TO_TICKS(100));
+            }
+            ok = fpga_configure(bitstream_start, bitstream_end - bitstream_start) == ESP_OK &&
+                 hulk_probe() >= 0;
+        }
+        ok = ok && hulk_set_ctrl(0) == ESP_OK && diag_fill(0, 0x0000, false) &&
+             diag_fill(SHADOW_ROM3, 0x0000, full);
+        if (ok && !full) {
+            static uint8_t ones[DIAG_BLOCK], in[DIAG_BLOCK];
+            memset(ones, 0xFF, sizeof(ones));
+            ok = hulk_write(SHADOW_ROM3 + 0x8000, ones, sizeof(ones)) == ESP_OK &&
+                 hulk_read(SHADOW_ROM3 + 0x8000, in, sizeof(in)) == ESP_OK &&
+                 !memcmp(ones, in, sizeof(ones));
+        }
+        ok = ok && hulk_set_ctrl(HULK_CTRL_ROM_EN) == ESP_OK;
+        status_led_fatal(!ok);
+        ESP_LOGW(TAG, "patterns %s, ROM3 %s", ok ? "ready" : "FAILED", full ? "full" : "only FFFF at $8000");
+        while (fpga_power_present()) {
+            vTaskDelay(1);
+            hulk_status_t st;
+            if (ok)
+                hulk_get_status(&st);
+        }
+        fpga_safe();
+        status_led_fatal(false);
+        ESP_LOGI(TAG, "Atari switched off");
+    }
+}
+#endif
+
 void app_main(void)
 {
+#ifdef HULK_NO_LOG
+    esp_log_level_set("*", ESP_LOG_NONE);
+#endif
     // The startup log level is WARN (each UART line costs ~5 ms on the boot path)
     esp_log_level_set("*", ESP_LOG_INFO);
     log_start();
@@ -249,6 +335,9 @@ void app_main(void)
     irq_start();
     status_led_init();
     sd_start();
+#ifdef HULK_DIAG_PATTERN
+    diag_pattern_loop();
+#endif
     if (!fpga_power_present())
         bootrec_print();               // not on the boot path of a cold start
 

@@ -149,6 +149,10 @@ static void wifi_task(void *arg)
 
 void wifi_start(void)
 {
+#ifdef HULK_NO_WIFI
+    s_link = s_time = WIFI_STATE_FAILED;    // diagnostics: the radio stays off
+    return;
+#endif
     // On the second core: the main loop (core 0) answers the Atari
     xTaskCreatePinnedToCore(wifi_task, "wifi", 4096, NULL, 2, NULL, 1);
 }

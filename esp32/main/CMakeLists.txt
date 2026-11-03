@@ -35,6 +35,32 @@ if(HULK_CART_READONLY)
     target_compile_definitions(${COMPONENT_TARGET} PRIVATE HULK_CART_READONLY)
 endif()
 
+# Diagnostics: the normal firmware with GEMDRIVE, and FFFF and 0000 in unused parts of ROM3
+# for atari/carttest/cartcons.c
+option(HULK_DIAG_HIGH "Fixed patterns in unused ROM3" OFF)
+if(HULK_DIAG_HIGH)
+    target_compile_definitions(${COMPONENT_TARGET} PRIVATE HULK_DIAG_HIGH)
+endif()
+
+# Diagnostics: nothing is logged
+option(HULK_NO_LOG "No log output" OFF)
+if(HULK_NO_LOG)
+    target_compile_definitions(${COMPONENT_TARGET} PRIVATE HULK_NO_LOG)
+endif()
+
+# Diagnostics: the radio stays off
+option(HULK_NO_WIFI "No Wi-Fi" OFF)
+if(HULK_NO_WIFI)
+    target_compile_definitions(${COMPONENT_TARGET} PRIVATE HULK_NO_WIFI)
+endif()
+
+# Diagnostics: known patterns in the SPRAM for atari/carttest/cartcons.c with status polls;
+# ROM4 changes at each Atari power-on, see diag_pattern_loop.
+option(HULK_DIAG_PATTERN "Fixed patterns in the SPRAM" OFF)
+if(HULK_DIAG_PATTERN)
+    target_compile_definitions(${COMPONENT_TARGET} PRIVATE HULK_DIAG_PATTERN HULK_CART_READONLY)
+endif()
+
 # Diagnostics: GEMDRIVE starts at boot like always, but returns at once: nothing on the
 # screen, no commands, no GEMDOS hook and no drive.
 option(HULK_GEMDRIVE_OFF "GEMDRIVE does not install itself" OFF)

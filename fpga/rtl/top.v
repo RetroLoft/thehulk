@@ -341,15 +341,39 @@ module top (
     // ------------------------------------------------------------------
     // Data bus output
     // ------------------------------------------------------------------
+    // The SPRAM output goes straight to the pins: a clock less from address to data. The Falcon
+    // needs it, its address lines settle late in a short cycle. d_q only holds the word while
+    // the SPI has the SPRAM.
     reg [15:0] d_q = 16'hffff;
+    wire [15:0] bus_word = ram_dout[bus_blk];
 
     always @(posedge clk)
-        if (!rom_enable)
-            d_q <= 16'hffff;
-        else if (bus_valid)
-            d_q <= ram_dout[bus_blk];
+        if (bus_valid)
+            d_q <= bus_word;
 
-    assign d = d_q;
+`ifdef DIAG_CONST
+    // Diagnostics: fixed values, without SPRAM, banks or SPI. FFFF from the start. Only a /ROM3
+    // read chooses another value, by A14..A12: the address bus also moves for other cycles, and
+    // the output must not. Reads within a range see an output that does not change; see
+    // atari/carttest/cartcons.c. U9 stays enabled by /ROM3 and /ROM4 as always.
+    reg [15:0] diag_q = 16'hffff;
+
+    always @(posedge clk)
+        if (rom3_sample) case (a_q[13:11])
+            3'd0: diag_q <= 16'hffff;
+            3'd1: diag_q <= 16'h0000;
+            3'd2: diag_q <= 16'haaaa;
+            3'd3: diag_q <= 16'h5555;
+            3'd4: diag_q <= a_q[0] ? 16'hffff : 16'h0000;   // changes per word
+            3'd5: diag_q <= 16'h00ff;
+            3'd6: diag_q <= 16'hff00;
+            3'd7: diag_q <= 16'h0001;
+        endcase
+
+    assign d = diag_q;
+`else
+    assign d = !rom_enable ? 16'hffff : bus_valid ? bus_word : d_q;
+`endif
 
     // ------------------------------------------------------------------
     // Counters (read through the SPI status command)

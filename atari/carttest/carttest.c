@@ -11,10 +11,14 @@
 #define WORDS       (BLOCK / 2)
 #define PATTERNS    8
 #define ROUNDS      3
-#define PASSES      4
+#define PASSES      8       // the second half after a pause, see direct_reads
+#define PAUSE_TICKS 200     // 1 s of the 200 Hz timer
 #define STYLES      4
 #define MAX_SHOWN   16
 #define READ_BUFFER ((const volatile void *)0xFB0108L)
+// On a cartridge drive, wherever the program itself is: the test reads through GEMDRIVE
+#define DATA_FILE   "N:\\FALCON\\CARTTEST.DAT"
+#define REPORT_FILE "N:\\FALCON\\CARTTEST.TXT"
 
 static const char *const style_name[STYLES] = { "Fread", "long ", "word ", "byte " };
 static const char *const pattern_name[PATTERNS] = {
@@ -30,6 +34,7 @@ static unsigned long errors[STYLES];
 static unsigned long pattern_errors[PATTERNS];
 static unsigned long lost[16], gained[16];
 static unsigned long stuck, flaky;
+static unsigned long pass_errors[PASSES];
 static int shown;
 static short report = -1;
 
@@ -157,12 +162,19 @@ static void direct_reads(int pattern, int round)
     for (long i = 0; i < WORDS; i++)
         wrong[i] = 0;
     for (int pass = 0; pass < PASSES; pass++) {
+        if (pass == PASSES / 2) {       // does it depend on the time since the Fread?
+            unsigned long start = *(volatile unsigned long *)0x4BAL;
+            while (*(volatile unsigned long *)0x4BAL - start < PAUSE_TICKS)
+                ;
+        }
+        unsigned long before = errors[1] + errors[2] + errors[3];
         read_long();
         compare(1, pattern, round);
         read_word();
         compare(2, pattern, round);
         read_byte();
         compare(3, pattern, round);
+        pass_errors[pass] += errors[1] + errors[2] + errors[3] - before;
     }
     Super(stack);
     for (long i = 0; i < WORDS; i++) {
@@ -175,7 +187,7 @@ static void direct_reads(int pattern, int round)
 
 static int make_file(void)
 {
-    long h = Fcreate("CARTTEST.DAT", 0);
+    long h = Fcreate(DATA_FILE, 0);
     if (h < 0) {
         out("Cannot create CARTTEST.DAT: this drive must be writable\r\n");
         return 0;
@@ -192,9 +204,126 @@ static int make_file(void)
     return 1;
 }
 
+static void clear_counts(void)
+{
+    for (int i = 0; i < STYLES; i++)
+        reads[i] = errors[i] = 0;
+    for (int i = 0; i < PATTERNS; i++)
+        pattern_errors[i] = 0;
+    for (int i = 0; i < 16; i++)
+        lost[i] = gained[i] = 0;
+    stuck = flaky = 0;
+    for (int i = 0; i < PASSES; i++)
+        pass_errors[i] = 0;
+    shown = 0;
+}
+
+static void report_counts(void)
+{
+    out("\r\nReads (words) and wrong words\r\n");
+    for (int s = 0; s < STYLES; s++) {
+        out(style_name[s]);
+        out("  ");
+        out_dec(reads[s]);
+        out("  wrong ");
+        out_dec(errors[s]);
+        out("\r\n");
+    }
+    out("Wrong words per pattern\r\n");
+    for (int p = 0; p < PATTERNS; p++) {
+        out(pattern_name[p]);
+        out("  ");
+        out_dec(pattern_errors[p]);
+        out("\r\n");
+    }
+    out("Bits D15..D0, lost (1 to 0)\r\n");
+    for (int b = 15; b >= 0; b--) {
+        out_dec(lost[b]);
+        out(b ? " " : "\r\n");
+    }
+    out("Bits D15..D0, gained (0 to 1)\r\n");
+    for (int b = 15; b >= 0; b--) {
+        out_dec(gained[b]);
+        out(b ? " " : "\r\n");
+    }
+    out("Wrong words per direct pass, after the Fread; 1 s pause before pass 5:\r\n");
+    for (int i = 0; i < PASSES; i++) {
+        out_dec(pass_errors[i]);
+        out(i < PASSES - 1 ? " " : "\r\n");
+    }
+    out("Direct reads: wrong in every pass ");
+    out_dec(stuck);
+    out(", now and then ");
+    out_dec(flaky);
+    out("\r\n");
+}
+
+static void run_test(void)
+{
+    long f = Fopen(DATA_FILE, 0);
+    if (f < 0) {
+        out("Cannot open CARTTEST.DAT\r\n");
+        return;
+    }
+    clear_counts();
+    for (int round = 1; round <= ROUNDS; round++) {
+        out("Round ");
+        out_dec(round);
+        out(" of ");
+        out_dec(ROUNDS);
+        out("\r\n");
+        for (int p = 0; p < PATTERNS; p++) {
+            make_pattern(p);
+            Fseek(p * BLOCK, f, 0);
+            long n = Fread(f, BLOCK, got);
+            if (n != BLOCK) {
+                out("Fread returned ");
+                out_dec(n < 0 ? -n : n);
+                out("\r\n");
+                continue;
+            }
+            compare(0, p, round);
+            direct_reads(p, round);
+        }
+    }
+    Fclose(f);
+    report_counts();
+}
+
+#ifdef SCOPE
+/* For the oscilloscope: reads one pattern from the cartridge over and over. Space: the next
+ * pattern. Esc: stop. Needs the CARTTEST.DAT that CARTTEST.PRG left behind. */
 int main(void)
 {
-    long h = Fcreate("CARTTEST.TXT", 0);
+    long f = Fopen(DATA_FILE, 0);
+    if (f < 0) {
+        out("Run CARTTEST.PRG first, CARTTEST.DAT is missing\r\n");
+        Cconin();
+        return 1;
+    }
+    int p = 0;
+    for (;;) {
+        Fseek(p * BLOCK, f, 0);
+        Fread(f, BLOCK, got);
+        out(pattern_name[p]);
+        out("\r\n");
+        long stack = Super(0L);
+        long key = 0;
+        while (!Bconstat(2))
+            read_long();
+        key = Bconin(2);
+        Super(stack);
+        if ((key & 0xFF) == 27)
+            break;
+        p = (p + 1) % PATTERNS;
+    }
+    Fclose(f);
+    return 0;
+}
+#else
+int main(void)
+{
+    long h = Fcreate(REPORT_FILE, 0);
     if (h >= 0)
         report = h;
     out("TheHulk cartridge read test\r\n");
@@ -206,68 +335,13 @@ int main(void)
     out_hex(tos, 4);
     out("\r\nWriting the test file...\r\n");
     if (make_file()) {
-        long f = Fopen("CARTTEST.DAT", 0);
-        if (f < 0) {
-            out("Cannot open CARTTEST.DAT\r\n");
-        } else {
-            for (int round = 1; round <= ROUNDS; round++) {
-                out("Round ");
-                out_dec(round);
-                out(" of ");
-                out_dec(ROUNDS);
-                out("\r\n");
-                for (int p = 0; p < PATTERNS; p++) {
-                    make_pattern(p);
-                    Fseek(p * BLOCK, f, 0);
-                    long n = Fread(f, BLOCK, got);
-                    if (n != BLOCK) {
-                        out("Fread returned ");
-                        out_dec(n < 0 ? -n : n);
-                        out("\r\n");
-                        continue;
-                    }
-                    compare(0, p, round);
-                    direct_reads(p, round);
-                }
-            }
-            Fclose(f);
-        }
-        out("\r\nReads (words) and wrong words\r\n");
-        for (int s = 0; s < STYLES; s++) {
-            out(style_name[s]);
-            out("  ");
-            out_dec(reads[s]);
-            out("  wrong ");
-            out_dec(errors[s]);
-            out("\r\n");
-        }
-        out("Wrong words per pattern\r\n");
-        for (int p = 0; p < PATTERNS; p++) {
-            out(pattern_name[p]);
-            out("  ");
-            out_dec(pattern_errors[p]);
-            out("\r\n");
-        }
-        out("Bits D15..D0, lost (1 to 0)\r\n");
-        for (int b = 15; b >= 0; b--) {
-            out_dec(lost[b]);
-            out(b ? " " : "\r\n");
-        }
-        out("Bits D15..D0, gained (0 to 1)\r\n");
-        for (int b = 15; b >= 0; b--) {
-            out_dec(gained[b]);
-            out(b ? " " : "\r\n");
-        }
-        out("Direct reads: wrong in every pass ");
-        out_dec(stuck);
-        out(", now and then ");
-        out_dec(flaky);
-        out("\r\n");
+        run_test();
     }
-    out("Done, see CARTTEST.TXT. Press a key.\r\n");
+    out("Done, see N:\\FALCON\\CARTTEST.TXT. Press a key.\r\n");
     if (report >= 0)
         Fclose(report);
     report = -1;
     Cconin();
     return 0;
 }
+#endif
