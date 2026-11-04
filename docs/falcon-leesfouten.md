@@ -1,14 +1,14 @@
 # Leesfouten op de Falcon030: rapport
 
-Stand: 3 november 2026, gateware v20 (`fpga/rtl`, meldt zich als versie 20).
+Stand: 4 november 2026, gateware v20 (`fpga/rtl`, meldt zich als versie 20).
 
 ## Samenvatting
 De Falcon030 las de cartridge fout, vooral woorden met veel enen. Andere machines hadden daar geen last van.
 De fouten zijn met gateware v20 vrijwel verdwenen: één klok minder van adres naar data.
 
 **Niet helemaal opgelost.** Op 4,7 miljoen directe reads blijven 8 fouten over, en een kopie van 1,47 MB had
-nog 1 fout woord. Daarnaast is v20 nog niet getest op de TT, de ST, de STE en de Mega STE. Gebruik de Falcon dus
-nog niet voor belangrijke kopieën.
+nog 1 fout woord. Gebruik de Falcon dus nog niet voor belangrijke kopieën. Op de andere machines geeft v20 geen
+enkele fout.
 
 ## Resultaat
 
@@ -29,6 +29,16 @@ Kopie van `S.ST` (1474560 bytes), vergeleken met het origineel op de server:
 |---|---:|
 | v14 (eerste bord, ander moment) | 527 |
 | v20 | 1 |
+
+`CARTTEST.PRG` met v20 op de andere machines, elk ruim 4,9 miljoen woorden:
+
+| Machine | Fouten |
+|---|---:|
+| TT, TOS 3.06 | 0 |
+| ST, TOS 1.04 | 0 |
+| ST, EmuTOS | 0 |
+| STE, TOS 1.62 | 0 |
+| Mega STE, TOS 2.06 | 0 |
 
 ## Oorzaak
 De gateware liep van adres naar data via drie stappen: adresregister, SPRAM, uitgangsregister. Dat kostte
@@ -73,10 +83,9 @@ reden is onbekend.
    richting dan het hoofdprobleem. Oorzaak onbekend.
 2. **Mislukte kopie.** De eerste kopie van `S.ST` met v20 stopte met een foutmelding na ongeveer 900 KB, de tweede
    lukte. De tekst van de melding is niet genoteerd en de oorzaak is niet vastgesteld.
-3. **Andere machines.** v20 is nog niet getest op TT, ST, STE en Mega STE.
-4. **Checksum.** Een checksum per leesblok zou de restfouten in bestanden kunnen afvangen, maar niet in code die
+3. **Checksum.** Een checksum per leesblok zou de restfouten in bestanden kunnen afvangen, maar niet in code die
    direct van de cartridge draait. Nog niet gebouwd.
-5. **Schade aan bord 1.** Dat bord geeft geen 5 V meer door en trok de DevKit in brown-outs. Niet doorgemeten.
+4. **Schade aan bord 1.** Dat bord geeft geen 5 V meer door en trok de DevKit in brown-outs. Niet doorgemeten.
 
 ## Testen
 - `atari/carttest/carttest.c`: `CARTTEST.PRG`, schrijft en leest een testbestand op `N:\FALCON` en leest de buffer
