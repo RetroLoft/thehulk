@@ -385,6 +385,7 @@ void gemdrv_init(void)
     set_shared_var(SHARED_VARIABLE_NO_INSTALL, HULK_GEMDRIVE_NO_INSTALL);
     set_shared_var(SHARED_VARIABLE_CODE_BUFFER, 0);
     set_shared_var(SHARED_VARIABLE_HOOK_STACK, 0);
+    set_shared_var(SHARED_VARIABLE_READ_CHECK, 0);
     set_shared_var(SHARED_VARIABLE_TRACE_BUFFER, 0);
     set_shared_var(SHARED_VARIABLE_DUMP_TOS, 0);              // set once the TOS version is known
     // GEMDRIVE polls the token this many times before a command times out: about
@@ -467,6 +468,9 @@ void gemdrv_command(const hulk_packet_t *pkt)
             s_y2k_patch = (value >> 16) < 0x0200 && !(value & 0x8000);
             WRITE_AND_SWAP_LONGWORD(m, GEMDRVEMUL_RTC_Y2K_PATCH, s_y2k_patch ? 0xFFFFFFFF : 0);
         }
+        // TOS 4: the Falcon can read a wrong word from the cartridge now and then
+        if (index == SHARED_VARIABLE_SVERSION && (value >> 24) == 0x04)
+            set_shared_var(SHARED_VARIABLE_READ_CHECK, 1);
         // TOS 3 and 4: a TT or Falcon with a 68030
         if (index == SHARED_VARIABLE_SVERSION && (value >> 16) >= 0x0300)
             set_shared_var(SHARED_VARIABLE_SYNC_TIMEOUT, SYNC_TIMEOUT_68030);
@@ -527,6 +531,10 @@ void gemdrv_command(const hulk_packet_t *pkt)
         uint32_t pending = ((uint32_t)payloadPtr[5] << 16) | payloadPtr[4];
         int32_t n = fs_fread(payloadPtr[0], buf, pending > sizeof(buf) ? sizeof(buf) : pending);
         if (n > 0) {
+            uint16_t chk = 0;
+            for (int32_t i = 0; i < n; i += 2)
+                chk += (buf[i] << 8) | (i + 1 < n ? buf[i + 1] : 0);
+            set_shared_var(SHARED_VARIABLE_READ_CHK, chk);
             write_bytes(GEMDRVEMUL_READ_BUFF, buf, n);
             shadow_mark(SHADOW_ROM3 + GEMDRVEMUL_READ_BUFF, n);
         }

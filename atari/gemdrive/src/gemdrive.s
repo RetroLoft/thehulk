@@ -45,6 +45,7 @@ DELAY_NOPS              equ 0          ; Number of nops to wait each test of the
 BUFFER_READ_SIZE        equ 16384      ; Number of bytes to read from the Sidecart in each read call
 BUFFER_WRITE_SIZE       equ 2048       ; Number of bytes to write to the Sidecart in each write call
 BASEPAGE_OFFSET_DTA     equ 32         ; Offset of the DTA in the basepage
+FREAD_RETRIES           equ 3          ; TheHulk: copies of a read block from the cartridge after a wrong one
 FWRITE_RETRIES          equ 3          ; Number of retries to write the data to the Sidecart per each Sidecart call
 EMULATED_DRIVE          equ 2          ; Emulated drive number: C = 2, D = 3, E = 4, F = 5, G = 6, H = 7, I = 8, J = 9, K = 10, L = 11, M = 12
                                        ; N = 13, O = 14, P = 15
@@ -193,6 +194,8 @@ SHARED_VARIABLE_NO_INSTALL              equ SHARED_VARIABLE_SHARED_FUNCTIONS_SIZ
 SHARED_VARIABLE_CODE_BUFFER             equ SHARED_VARIABLE_SHARED_FUNCTIONS_SIZE + 20            ; TheHulk: RAM for the token wait code, not _dskbufp: disk drivers use that buffer (0 = not allocated yet)
 SHARED_VARIABLE_TRACE_BUFFER            equ SHARED_VARIABLE_SHARED_FUNCTIONS_SIZE + 21            ; TheHulk diagnostics: buffer of the last Fread, set by the ESP32
 SHARED_VARIABLE_HOOK_STACK              equ SHARED_VARIABLE_SHARED_FUNCTIONS_SIZE + 22            ; TheHulk: top of our own stack for the GEMDOS hook (0 = not allocated)
+SHARED_VARIABLE_READ_CHECK              equ SHARED_VARIABLE_SHARED_FUNCTIONS_SIZE + 23            ; TheHulk: non-zero: compare a read block with READ_CHK, for the Falcon
+SHARED_VARIABLE_READ_CHK                equ SHARED_VARIABLE_SHARED_FUNCTIONS_SIZE + 24            ; TheHulk: sum of the words of the read block
 
 GEMDRVEMUL_TIMEOUT_SEC  equ (ROM_EXCHG_BUFFER_ADDR + $8)     ; ROM_EXCHG_BUFFER_ADDR + 8 bytes
 GEMDRVEMUL_PING_STATUS  equ (GEMDRVEMUL_TIMEOUT_SEC + $4)    ; GEMDRVEMUL_TIMEOUT_SEC + 4 bytes
@@ -1763,6 +1766,8 @@ _notlong:
     bmi .fread_exit                      ; Exit the loop
     tst.l d0                             ; Check if the number of bytes read is 0
     beq .fread_exit_ok                   ; If 0, we are done
+    move.w #FREAD_RETRIES, -(sp)         ; TheHulk: on the stack, the copy loops use the registers
+.fread_copy_block:
     lea GEMDRVEMUL_READ_BUFFER, a5       ; Address of the buffer to copy the data from the Sidecart
     move.l a4, d7                        ; Test if the dest address is odd or even
     btst #0, d7                          ; Check if the address is odd
@@ -1839,6 +1844,37 @@ _notlong:
 
 
 .fread_copy_exit:
+    ; TheHulk: the Falcon can read a wrong word from the cartridge now and then. Compare what
+    ; arrived in RAM, and copy the block again: it is still on the cartridge.
+    tst.l (GEMDRVEMUL_SHARED_VARIABLES + (SHARED_VARIABLE_READ_CHECK * 4))
+    beq.s .fread_check_ok
+    move.l a4, a5
+    sub.l d0, a5                         ; The start of the block in RAM
+    move.l d0, d7                        ; Bytes to add up
+    moveq #0, d1                         ; The sum, of words with the high byte first
+.fread_sum_loop:
+    moveq #0, d2
+    move.b (a5)+, d2
+    lsl.w #8, d2
+    subq.l #1, d7
+    beq.s .fread_sum_last                ; An odd length: the last byte alone
+    move.b (a5)+, d2
+    subq.l #1, d7
+.fread_sum_last:
+    add.w d2, d1
+    tst.l d7
+    bne.s .fread_sum_loop
+    move.l (GEMDRVEMUL_SHARED_VARIABLES + (SHARED_VARIABLE_READ_CHK * 4)), d2
+    cmp.w d2, d1
+    beq.s .fread_check_ok
+    sub.l d0, a4                         ; Back to the start of the block
+    subq.w #1, (sp)
+    bpl .fread_copy_block
+    addq.l #2, sp                        ; Still wrong: an error is better than wrong data
+    moveq.l #GEMDOS_EINTRN, d0
+    bra .fread_exit
+.fread_check_ok:
+    addq.l #2, sp
     add.l d0, d6                         ; Add the number of bytes read to the counter
     cmp.l #BUFFER_READ_SIZE, d0          ; Check if the number of bytes read is not equal than the buffer size
     bne.s .fread_exit_ok                 ; if not equal, it's smaller than the buffer size. We are done
