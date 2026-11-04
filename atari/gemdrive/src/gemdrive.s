@@ -105,7 +105,7 @@ ROM_EXCHG_BUFFER_ADDR   equ (ROM3_START_ADDR)               ; ROM4 buffer addres
 RANDOM_TOKEN_ADDR:      equ (ROM_EXCHG_BUFFER_ADDR)
 RANDOM_TOKEN_SEED_ADDR: equ (RANDOM_TOKEN_ADDR + 4) ; RANDOM_TOKEN_ADDR + 0 bytes
 CODE_BUFFER_SIZE:       equ 64        ; Bytes of RAM for the token wait code
-HOOK_STACK_SIZE:        equ 2048      ; Bytes of RAM for the stack of the GEMDOS hook, also holds its temporary data
+HOOK_STACK_SIZE:        equ 1024      ; Bytes of RAM for the stack of the GEMDOS hook, also holds its temporary data
 RAM_CODE_SIZE:          equ 1280      ; Bytes of RAM on the Falcon for the routines that read ROM3 in a loop
 HOOK_STACK_FILL:        equ $48554C4B ; TheHulk diagnostics: what is still there has not been used
 RANDOM_TOKEN_POST_WAIT: equ $1        ; Wait this cycles after the random number generator is ready

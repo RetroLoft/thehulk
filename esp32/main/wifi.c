@@ -2,6 +2,7 @@
 // GEMDRIVE waits for it during the boot (18 s for the network, 15 s for the time). The
 // ESP32 keeps trying to connect afterwards. NTP gets three requests of 5 s each, once
 // connected, and is then skipped until the next start.
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include "freertos/FreeRTOS.h"
@@ -149,6 +150,12 @@ static void wifi_task(void *arg)
 
 void wifi_start(void)
 {
+    // For the dates FatFs puts on the card. In the POSIX form the sign is the other way round.
+    char tz[20];
+    snprintf(tz, sizeof(tz), "UTC%+d", -atoi(settings_rtc()->utc_offset));
+    setenv("TZ", tz, 1);
+    tzset();
+
 #ifdef HULK_NO_WIFI
     s_link = s_time = WIFI_STATE_FAILED;    // diagnostics: the radio stays off
     return;
