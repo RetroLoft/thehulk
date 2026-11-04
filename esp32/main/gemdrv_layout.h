@@ -135,7 +135,9 @@
 #define GEMDOS_ENSAME   -48     // not the same drive
 #define GEMDOS_ENMFIL   -49     // no more files
 
-#define FIRST_FILE_DESCRIPTOR                   16384
+// Fits in a signed byte, for programs that keep a handle in one (1st Word Plus seems to), and
+// above the handles TOS hands out. GEMDRIVE treats everything from here on as its own.
+#define FIRST_FILE_DESCRIPTOR                   100
 #define GEMDOS_SLOT_PROTOCOL_VERSION            1
 #define GEMDRIVE_MAX_RUNTIME_DRIVES             9
 
