@@ -1474,6 +1474,29 @@ static void rtc_startup_load(void)
 /* never one of the eight ordinary slots (drive.h).                     */
 /* ================================================================== */
 
+/* The dialogs that are open, oldest first. form_dial(FMD_FINISH) only sends
+ * a redraw message to windows, and this program has none: what a closing
+ * dialog covered has to be drawn again here. */
+#define MAX_OPEN_DIALOGS 8
+static OBJECT *g_open_dialogs[MAX_OPEN_DIALOGS];
+static int g_open_dialog_count;
+
+static void dialog_opened(OBJECT *tree)
+{
+    if (g_open_dialog_count < MAX_OPEN_DIALOGS)
+        g_open_dialogs[g_open_dialog_count++] = tree;
+}
+
+static void dialog_closed(short x, short y, short w, short h)
+{
+    int i;
+
+    if (g_open_dialog_count > 0)
+        g_open_dialog_count--;
+    for (i = 0; i < g_open_dialog_count; i++)
+        objc_draw(g_open_dialogs[i], 0, MAX_DEPTH, x, y, w, h);
+}
+
 static void cl_dialog_init(void)
 {
     short cw, ch, bw, bh;
@@ -1563,6 +1586,7 @@ static void cl_editor_run(DriveConfig *cfg)
 
     form_center(cl_dlg, &x, &y, &w, &h);
     form_dial(FMD_START, x, y, w, h, x, y, w, h);
+    dialog_opened(cl_dlg);
     objc_draw(cl_dlg, CL_ROOT, MAX_DEPTH, x, y, w, h);
 
     done = 0;
@@ -1597,6 +1621,7 @@ static void cl_editor_run(DriveConfig *cfg)
     }
 
     form_dial(FMD_FINISH, x, y, w, h, x, y, w, h);
+    dialog_closed(x, y, w, h);
 }
 
 /* ================================================================== */
@@ -1731,6 +1756,7 @@ static int sd_editor_run(DriveConfig *cfg, int index)
 
     form_center(sd_dlg, &x, &y, &w, &h);
     form_dial(FMD_START, x, y, w, h, x, y, w, h);
+    dialog_opened(sd_dlg);
     objc_draw(sd_dlg, SD_ROOT, MAX_DEPTH, x, y, w, h);
 
     done = 0;
@@ -1770,6 +1796,7 @@ static int sd_editor_run(DriveConfig *cfg, int index)
     }
 
     form_dial(FMD_FINISH, x, y, w, h, x, y, w, h);
+    dialog_closed(x, y, w, h);
 
     if (done == 2) {
         memset(&cfg->drives[index], 0, sizeof(cfg->drives[index])); /* state == DRIVE_SLOT_EMPTY */
@@ -1966,6 +1993,7 @@ static int tnfs_editor_run(DriveConfig *cfg, int index)
 
     form_center(te_dlg, &x, &y, &w, &h);
     form_dial(FMD_START, x, y, w, h, x, y, w, h);
+    dialog_opened(te_dlg);
     objc_draw(te_dlg, TE_ROOT, MAX_DEPTH, x, y, w, h);
 
     done = 0;
@@ -2017,6 +2045,7 @@ static int tnfs_editor_run(DriveConfig *cfg, int index)
     }
 
     form_dial(FMD_FINISH, x, y, w, h, x, y, w, h);
+    dialog_closed(x, y, w, h);
 
     if (done == 2) {
         memset(&cfg->drives[index], 0, sizeof(cfg->drives[index])); /* state == DRIVE_SLOT_EMPTY */
@@ -2077,12 +2106,14 @@ static int add_disk_type_run(void)
 
     form_center(ad_dlg, &x, &y, &w, &h);
     form_dial(FMD_START, x, y, w, h, x, y, w, h);
+    dialog_opened(ad_dlg);
     objc_draw(ad_dlg, AD_ROOT, MAX_DEPTH, x, y, w, h);
 
     which = (short)(form_do(ad_dlg, AD_ROOT) & 0x7FFF);
     wait_mouse_release();
 
     form_dial(FMD_FINISH, x, y, w, h, x, y, w, h);
+    dialog_closed(x, y, w, h);
 
     (void)sx; (void)sy; (void)sw; (void)bw; (void)bh;
 
@@ -2237,6 +2268,7 @@ static void rtc_editor_run(RtcConfig *rc)
 
     form_center(rc_dlg, &x, &y, &w, &h);
     form_dial(FMD_START, x, y, w, h, x, y, w, h);
+    dialog_opened(rc_dlg);
     objc_draw(rc_dlg, RC_ROOT, MAX_DEPTH, x, y, w, h);
 
     done = 0;
@@ -2273,6 +2305,7 @@ static void rtc_editor_run(RtcConfig *rc)
     }
 
     form_dial(FMD_FINISH, x, y, w, h, x, y, w, h);
+    dialog_closed(x, y, w, h);
 }
 
 /* ================================================================== */
@@ -2378,6 +2411,7 @@ static void upd_notice_run(const char *installed, const char *latest)
 
     form_center(upd_dlg, &x, &y, &w, &h);
     form_dial(FMD_START, x, y, w, h, x, y, w, h);
+    dialog_opened(upd_dlg);
     objc_draw(upd_dlg, UPD_ROOT, MAX_DEPTH, x, y, w, h);
 
     do {
@@ -2386,6 +2420,7 @@ static void upd_notice_run(const char *installed, const char *latest)
     } while (which != UPD_OK);
 
     form_dial(FMD_FINISH, x, y, w, h, x, y, w, h);
+    dialog_closed(x, y, w, h);
 }
 #endif
 
@@ -2454,6 +2489,7 @@ static void pw_dialog_show(void)
 
     form_center(pw_dlg, &pw_x, &pw_y, &pw_w, &pw_h);
     form_dial(FMD_START, pw_x, pw_y, pw_w, pw_h, pw_x, pw_y, pw_w, pw_h);
+    dialog_opened(pw_dlg);
     objc_draw(pw_dlg, PW_ROOT, MAX_DEPTH, pw_x, pw_y, pw_w, pw_h);
 
     (void)bw; (void)bh;
@@ -2462,6 +2498,7 @@ static void pw_dialog_show(void)
 static void pw_dialog_hide(void)
 {
     form_dial(FMD_FINISH, pw_x, pw_y, pw_w, pw_h, pw_x, pw_y, pw_w, pw_h);
+    dialog_closed(pw_x, pw_y, pw_w, pw_h);
 }
 
 /* ================================================================== */
@@ -2772,6 +2809,7 @@ static void netconfig_editor_run(NetConfig *nc)
 
     form_center(nc_dlg, &x, &y, &w, &h);
     form_dial(FMD_START, x, y, w, h, x, y, w, h);
+    dialog_opened(nc_dlg);
     objc_draw(nc_dlg, NC_ROOT, MAX_DEPTH, x, y, w, h);
 
     done = 0;
@@ -2835,6 +2873,7 @@ static void netconfig_editor_run(NetConfig *nc)
     }
 
     form_dial(FMD_FINISH, x, y, w, h, x, y, w, h);
+    dialog_closed(x, y, w, h);
 }
 
 /* ================================================================== */
@@ -3152,6 +3191,7 @@ static void drives_window_run(DriveConfig *cfg)
 
     form_center(ov_dlg, &x, &y, &w, &h);
     form_dial(FMD_START, x, y, w, h, x, y, w, h);
+    dialog_opened(ov_dlg);
     objc_draw(ov_dlg, OV_ROOT, MAX_DEPTH, x, y, w, h);
 
     done = 0;
@@ -3200,6 +3240,7 @@ static void drives_window_run(DriveConfig *cfg)
     }
 
     form_dial(FMD_FINISH, x, y, w, h, x, y, w, h);
+    dialog_closed(x, y, w, h);
 }
 
 /* ================================================================== */
@@ -3871,6 +3912,7 @@ void dialog_run(DriveConfig *cfg)
 
     form_center(sw_dlg, &x, &y, &w, &h);
     form_dial(FMD_START, x, y, w, h, x, y, w, h);
+    dialog_opened(sw_dlg);
     objc_draw(sw_dlg, SW_ROOT, MAX_DEPTH, x, y, w, h);
 
     done = 0;
@@ -3930,4 +3972,5 @@ void dialog_run(DriveConfig *cfg)
     }
 
     form_dial(FMD_FINISH, x, y, w, h, x, y, w, h);
+    dialog_closed(x, y, w, h);
 }
