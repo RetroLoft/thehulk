@@ -106,6 +106,7 @@ RANDOM_TOKEN_ADDR:      equ (ROM_EXCHG_BUFFER_ADDR)
 RANDOM_TOKEN_SEED_ADDR: equ (RANDOM_TOKEN_ADDR + 4) ; RANDOM_TOKEN_ADDR + 0 bytes
 CODE_BUFFER_SIZE:       equ 64        ; Bytes of RAM for the token wait code
 HOOK_STACK_SIZE:        equ 2048      ; Bytes of RAM for the stack of the GEMDOS hook, also holds its temporary data
+RAM_CODE_SIZE:          equ 1280      ; Bytes of RAM on the Falcon for the routines that read ROM3 in a loop
 HOOK_STACK_FILL:        equ $48554C4B ; TheHulk diagnostics: what is still there has not been used
 RANDOM_TOKEN_POST_WAIT: equ $1        ; Wait this cycles after the random number generator is ready
 
@@ -196,6 +197,9 @@ SHARED_VARIABLE_TRACE_BUFFER            equ SHARED_VARIABLE_SHARED_FUNCTIONS_SIZ
 SHARED_VARIABLE_HOOK_STACK              equ SHARED_VARIABLE_SHARED_FUNCTIONS_SIZE + 22            ; TheHulk: top of our own stack for the GEMDOS hook (0 = not allocated)
 SHARED_VARIABLE_READ_CHECK              equ SHARED_VARIABLE_SHARED_FUNCTIONS_SIZE + 23            ; TheHulk: non-zero: compare a read block with READ_CHK, for the Falcon
 SHARED_VARIABLE_READ_CHK                equ SHARED_VARIABLE_SHARED_FUNCTIONS_SIZE + 24            ; TheHulk: sum of the words of the read block
+SHARED_VARIABLE_RAM_SEND                equ SHARED_VARIABLE_SHARED_FUNCTIONS_SIZE + 25            ; TheHulk: on the Falcon: these routines in RAM, or 0
+SHARED_VARIABLE_RAM_SEND_WRITE          equ SHARED_VARIABLE_SHARED_FUNCTIONS_SIZE + 26
+SHARED_VARIABLE_RAM_FREAD_COPY          equ SHARED_VARIABLE_SHARED_FUNCTIONS_SIZE + 27
 
 GEMDRVEMUL_TIMEOUT_SEC  equ (ROM_EXCHG_BUFFER_ADDR + $8)     ; ROM_EXCHG_BUFFER_ADDR + 8 bytes
 GEMDRVEMUL_PING_STATUS  equ (GEMDRVEMUL_TIMEOUT_SEC + $4)    ; GEMDRVEMUL_TIMEOUT_SEC + 4 bytes
@@ -517,26 +521,73 @@ _ping_ready:
 
 ; TheHulk: from here on the token wait code runs from our own piece of RAM. The file
 ; calls of every drive now pass through this code, _dskbufp may hold data of a disk driver.
-    move.l #CODE_BUFFER_SIZE + HOOK_STACK_SIZE, -(sp)
+    move.l #CODE_BUFFER_SIZE + HOOK_STACK_SIZE, d0
+    tst.l (GEMDRVEMUL_SHARED_VARIABLES + (SHARED_VARIABLE_READ_CHECK * 4))
+    beq.s .code_buffer_size
+    add.l #RAM_CODE_SIZE, d0             ; The Falcon: also the routines that read ROM3 in a loop
+.code_buffer_size:
+    move.l d0, -(sp)
     gemdos Malloc, 6
     tst.l d0
-    ble.s .code_buffer_done
+    ble .code_buffer_done
     move.l d0, -(sp)
     move.l d0, d4
     move.l #SHARED_VARIABLE_CODE_BUFFER, d3
     send_sync CMD_SET_SHARED_VAR, 8
     move.l (sp)+, d4
     add.l #CODE_BUFFER_SIZE + HOOK_STACK_SIZE, d4
+    tst.l (GEMDRVEMUL_SHARED_VARIABLES + (SHARED_VARIABLE_READ_CHECK * 4))
+    beq.s .code_buffer_stack
+    add.l #RAM_CODE_SIZE, d4
+.code_buffer_stack:
     move.l #SHARED_VARIABLE_HOOK_STACK, d3
     send_sync CMD_SET_SHARED_VAR, 8
     tst.l (GEMDRVEMUL_SHARED_VARIABLES + (SHARED_VARIABLE_NO_INSTALL * 4))
-    beq.s .code_buffer_done
+    beq .code_buffer_done
     move.l (GEMDRVEMUL_SHARED_VARIABLES + (SHARED_VARIABLE_HOOK_STACK * 4)), a4
     lea -HOOK_STACK_SIZE(a4), a4
     move.w #(HOOK_STACK_SIZE / 4) - 1, d0
 .hook_stack_fill:
     move.l #HOOK_STACK_FILL, (a4)+
     dbf d0, .hook_stack_fill
+; TheHulk: on the Falcon the routines that read ROM3 in a loop run from RAM, behind the wait code
+    tst.l (GEMDRVEMUL_SHARED_VARIABLES + (SHARED_VARIABLE_READ_CHECK * 4))
+    beq .code_buffer_done
+    move.l (GEMDRVEMUL_SHARED_VARIABLES + (SHARED_VARIABLE_CODE_BUFFER * 4)), a4
+    lea CODE_BUFFER_SIZE(a4), a4
+    lea _start_async_code_in_stack, a0
+    move.w #(_end_async_code_in_stack - _start_async_code_in_stack) / 2 - 1, d0
+    move.l a4, d5
+.ram_copy_send:
+    move.w (a0)+, (a4)+
+    dbf d0, .ram_copy_send
+    lea _start_async_write_code_in_stack, a0
+    move.w #(_end_async_write_code_in_stack - _start_async_write_code_in_stack) / 2 - 1, d0
+    move.l a4, d6
+.ram_copy_write:
+    move.w (a0)+, (a4)+
+    dbf d0, .ram_copy_write
+    lea _fread_copy_code, a0
+    move.w #(_end_fread_copy_code - _fread_copy_code) / 2 - 1, d0
+    move.l a4, d7
+.ram_copy_fread:
+    move.w (a0)+, (a4)+
+    dbf d0, .ram_copy_fread
+    ; Only here, with a 68030: forget the old contents of this RAM in the instruction cache
+    dc.w $4E7A, $0002                    ; movec cacr, d0
+    or.w #$0008, d0                      ; clear the instruction cache
+    dc.w $4E7B, $0002                    ; movec d0, cacr
+    movem.l d5-d7, -(sp)
+    move.l d6, d4
+    move.l #SHARED_VARIABLE_RAM_SEND_WRITE, d3
+    send_sync CMD_SET_SHARED_VAR, 8
+    move.l 8(sp), d4
+    move.l #SHARED_VARIABLE_RAM_FREAD_COPY, d3
+    send_sync CMD_SET_SHARED_VAR, 8
+    move.l (sp), d4
+    move.l #SHARED_VARIABLE_RAM_SEND, d3
+    send_sync CMD_SET_SHARED_VAR, 8
+    lea 12(sp), sp
 .code_buffer_done:
 
 ; TheHulk: hand the processor state saved by the last crash (bombs) to the ESP32 log:
@@ -1768,81 +1819,13 @@ _notlong:
     beq .fread_exit_ok                   ; If 0, we are done
     move.w #FREAD_RETRIES, -(sp)         ; TheHulk: on the stack, the copy loops use the registers
 .fread_copy_block:
-    lea GEMDRVEMUL_READ_BUFFER, a5       ; Address of the buffer to copy the data from the Sidecart
-    move.l a4, d7                        ; Test if the dest address is odd or even
-    btst #0, d7                          ; Check if the address is odd
-    beq.s .fread_loop_copy_even          ; If even go to copy longword 
-.fread_copy_odd:
-    move.l d0, d7                        ; Number of bytes to copy to the buffer
-    subq.l #1, d7                        ; We need to copy one byte less because dbf counts 0
-.fread_loop_copy:
-    move.b (a5)+, (a4)+                  ; Copy the byte
-    dbf d7, .fread_loop_copy             ; Loop until we copy all the bytes
-    bra .fread_copy_exit               ; No copy anymore
-
-.fread_loop_copy_even:
-    move.l d0, d7                        ; Number of bytes to copy to the buffer
-    lsr.l #1, d7                         ; Divide the number of bytes by 2
-    btst #1, d7                          ; Check if can copy longwords
-    beq.s .fread_loop_copy_lword_even    ; If so, copy longwords
-    subq.l #1, d7                        ; We need to copy one byte less because dbf counts 0
-.fread_loop_copy_word:
-    move.w (a5)+, (a4)+                  ; Copy word
-    dbf d7, .fread_loop_copy_word        ; Loop until we copy all the bytes
-    btst #0, d0                          ; Check if the number of bytes to copy is odd
-    beq.s .fread_copy_exit               ; If not, we are done
-    move.b (a5)+, (a4)+                  ; Copy the last byte
-    bra.s .fread_copy_exit               ; No copy anymore
-
-.fread_loop_copy_lword_even:
-    move.l d0, d7                        ; Number of bytes to copy to the buffer
-    lsr.l #2, d7                         ; Divide the number of words by 4
-    tst.l d7                             ; Check if we have to copy the last bytes
-    beq.s .fread_loop_copy_tail_bytes    ; if zero, only copy the last bytes
-    subq.l #1, d7                        ; We need to copy one byte less because dbf counts 0
-
-    cmp.l #8, d7
-    blt.s .fread_loop_copy_lword
-    
-    move.l d1, -(sp)                     ; Save the register D1
-    move.l d7, d1                        ; Use D1 as loop counter for the unrolled amount
-    lsr.l #3, d1                         ; Divide the number of words by 8
-    and.l #$7, d7                        ; remaining amount of words in d7
-    subq.l #1, d1                        ; We need to copy one byte less because dbf counts 0
-.fread_loop_copy_lword_unroll_by8:      ; 8x unrolled loop
-    move.l (a5)+, (a4)+                  ; Copy longword
-    move.l (a5)+, (a4)+                  ; Copy longword
-    move.l (a5)+, (a4)+                  ; Copy longword
-    move.l (a5)+, (a4)+                  ; Copy longword
-    move.l (a5)+, (a4)+                  ; Copy longword
-    move.l (a5)+, (a4)+                  ; Copy longword
-    move.l (a5)+, (a4)+                  ; Copy longword
-    move.l (a5)+, (a4)+                  ; Copy longword
-    dbf d1, .fread_loop_copy_lword_unroll_by8
-    move.l (sp)+,d1                      ; Restore the register D1
-    
-    cmp.l #4, d7
-    blt.s .fread_loop_copy_lword
-.fread_loop_copy_lword_unroll_by4:       ; unrolled by 4
-    move.l (a5)+, (a4)+                  ; Copy longword
-    move.l (a5)+, (a4)+                  ; Copy longword
-    move.l (a5)+, (a4)+                  ; Copy longword
-    move.l (a5)+, (a4)+                  ; Copy longword
-    subq.l #4,d7
-  
-.fread_loop_copy_lword:
-    move.l (a5)+, (a4)+                  ; Copy longword
-    dbf d7, .fread_loop_copy_lword       ; Loop until we copy all the bytes
-
-    move.l d0, d7                        ; Number of bytes to copy to the buffer
-    and.l #%11, d7                       ; Check if we have to copy the last bytes        
-    beq.s .fread_copy_exit               ; If not, we are done
-    subq.l #1, d7                        ; We need to copy one byte less because dbf counts 0
-.fread_loop_copy_tail_bytes:
-    move.b (a5)+, (a4)+                  ; Copy the last byte
-    dbf d7, .fread_loop_copy_tail_bytes  ; No copy anymore
-
-
+    move.l (GEMDRVEMUL_SHARED_VARIABLES + (SHARED_VARIABLE_RAM_FREAD_COPY * 4)), a5
+    cmp.w #0, a5
+    beq.s .fread_copy_rom
+    jsr (a5)                             ; TheHulk: on the Falcon from RAM, see .code_buffer_done
+    bra.s .fread_copy_exit
+.fread_copy_rom:
+    bsr _fread_copy_code
 .fread_copy_exit:
     ; TheHulk: the Falcon can read a wrong word from the cartridge now and then. Compare what
     ; arrived in RAM, and copy the block again: it is still on the cartridge.
@@ -2499,3 +2482,90 @@ null_pointer:
 
         even
 rom_function_end:
+
+; TheHulk: copies d0 bytes from the read buffer on the cartridge to a4. d1 and d7 are saved or
+; free, a5 is free. Only relative branches: on the Falcon a copy of this runs from RAM.
+_fread_copy_code:
+    lea GEMDRVEMUL_READ_BUFFER, a5       ; Address of the buffer to copy the data from the Sidecart
+    move.l a4, d7                        ; Test if the dest address is odd or even
+    btst #0, d7                          ; Check if the address is odd
+    beq.s .fread_loop_copy_even          ; If even go to copy longword 
+.fread_copy_odd:
+    move.l d0, d7                        ; Number of bytes to copy to the buffer
+    subq.l #1, d7                        ; We need to copy one byte less because dbf counts 0
+.fread_loop_copy:
+    move.b (a5)+, (a4)+                  ; Copy the byte
+    dbf d7, .fread_loop_copy             ; Loop until we copy all the bytes
+    bra .fread_copy_rts               ; No copy anymore
+
+.fread_loop_copy_even:
+    move.l d0, d7                        ; Number of bytes to copy to the buffer
+    lsr.l #1, d7                         ; Divide the number of bytes by 2
+    btst #1, d7                          ; Check if can copy longwords
+    beq.s .fread_loop_copy_lword_even    ; If so, copy longwords
+    subq.l #1, d7                        ; We need to copy one byte less because dbf counts 0
+.fread_loop_copy_word:
+    move.w (a5)+, (a4)+                  ; Copy word
+    dbf d7, .fread_loop_copy_word        ; Loop until we copy all the bytes
+    btst #0, d0                          ; Check if the number of bytes to copy is odd
+    beq.s .fread_copy_rts               ; If not, we are done
+    move.b (a5)+, (a4)+                  ; Copy the last byte
+    bra.s .fread_copy_rts               ; No copy anymore
+
+.fread_loop_copy_lword_even:
+    move.l d0, d7                        ; Number of bytes to copy to the buffer
+    lsr.l #2, d7                         ; Divide the number of words by 4
+    tst.l d7                             ; Check if we have to copy the last bytes
+    beq.s .fread_loop_copy_tail_bytes    ; if zero, only copy the last bytes
+    subq.l #1, d7                        ; We need to copy one byte less because dbf counts 0
+
+    cmp.l #8, d7
+    blt.s .fread_loop_copy_lword
+    
+    move.l d1, -(sp)                     ; Save the register D1
+    move.l d7, d1                        ; Use D1 as loop counter for the unrolled amount
+    lsr.l #3, d1                         ; Divide the number of words by 8
+    and.l #$7, d7                        ; remaining amount of words in d7
+    subq.l #1, d1                        ; We need to copy one byte less because dbf counts 0
+.fread_loop_copy_lword_unroll_by8:      ; 8x unrolled loop
+    move.l (a5)+, (a4)+                  ; Copy longword
+    move.l (a5)+, (a4)+                  ; Copy longword
+    move.l (a5)+, (a4)+                  ; Copy longword
+    move.l (a5)+, (a4)+                  ; Copy longword
+    move.l (a5)+, (a4)+                  ; Copy longword
+    move.l (a5)+, (a4)+                  ; Copy longword
+    move.l (a5)+, (a4)+                  ; Copy longword
+    move.l (a5)+, (a4)+                  ; Copy longword
+    dbf d1, .fread_loop_copy_lword_unroll_by8
+    move.l (sp)+,d1                      ; Restore the register D1
+    
+    cmp.l #4, d7
+    blt.s .fread_loop_copy_lword
+.fread_loop_copy_lword_unroll_by4:       ; unrolled by 4
+    move.l (a5)+, (a4)+                  ; Copy longword
+    move.l (a5)+, (a4)+                  ; Copy longword
+    move.l (a5)+, (a4)+                  ; Copy longword
+    move.l (a5)+, (a4)+                  ; Copy longword
+    subq.l #4,d7
+  
+.fread_loop_copy_lword:
+    move.l (a5)+, (a4)+                  ; Copy longword
+    dbf d7, .fread_loop_copy_lword       ; Loop until we copy all the bytes
+
+    move.l d0, d7                        ; Number of bytes to copy to the buffer
+    and.l #%11, d7                       ; Check if we have to copy the last bytes        
+    beq.s .fread_copy_rts               ; If not, we are done
+    subq.l #1, d7                        ; We need to copy one byte less because dbf counts 0
+.fread_loop_copy_tail_bytes:
+    move.b (a5)+, (a4)+                  ; Copy the last byte
+    dbf d7, .fread_loop_copy_tail_bytes  ; No copy anymore
+
+
+.fread_copy_rts:
+    rts
+_end_fread_copy_code:
+
+; TheHulk: the routines that run from RAM on the Falcon must fit in RAM_CODE_SIZE
+    ifgt (_end_async_code_in_stack-_start_async_code_in_stack)+(_end_async_write_code_in_stack-_start_async_write_code_in_stack)+(_end_fread_copy_code-_fread_copy_code)-RAM_CODE_SIZE
+    fail "RAM_CODE_SIZE is too small"
+    endif

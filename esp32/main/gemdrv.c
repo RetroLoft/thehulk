@@ -386,6 +386,9 @@ void gemdrv_init(void)
     set_shared_var(SHARED_VARIABLE_CODE_BUFFER, 0);
     set_shared_var(SHARED_VARIABLE_HOOK_STACK, 0);
     set_shared_var(SHARED_VARIABLE_READ_CHECK, 0);
+    set_shared_var(SHARED_VARIABLE_RAM_SEND, 0);
+    set_shared_var(SHARED_VARIABLE_RAM_SEND_WRITE, 0);
+    set_shared_var(SHARED_VARIABLE_RAM_FREAD_COPY, 0);
     set_shared_var(SHARED_VARIABLE_TRACE_BUFFER, 0);
     set_shared_var(SHARED_VARIABLE_DUMP_TOS, 0);              // set once the TOS version is known
     // GEMDRIVE polls the token this many times before a command times out: about
@@ -461,6 +464,9 @@ void gemdrv_command(const hulk_packet_t *pkt)
         if (index == SHARED_VARIABLE_SVERSION) {
             set_shared_var(SHARED_VARIABLE_CODE_BUFFER, 0);
             set_shared_var(SHARED_VARIABLE_HOOK_STACK, 0);
+            set_shared_var(SHARED_VARIABLE_RAM_SEND, 0);
+            set_shared_var(SHARED_VARIABLE_RAM_SEND_WRITE, 0);
+            set_shared_var(SHARED_VARIABLE_RAM_FREAD_COPY, 0);
             fs_reset();
             // The keyboard clock of TOS 1 cannot hold a year after 1999. GEMDRIVE then
             // sets a year 30 back and corrects XBIOS Gettime. A low word with the high
@@ -530,6 +536,9 @@ void gemdrv_command(const hulk_packet_t *pkt)
         static uint8_t buf[GEMDRVEMUL_READ_BUFF_SIZE];
         uint32_t pending = ((uint32_t)payloadPtr[5] << 16) | payloadPtr[4];
         int32_t n = fs_fread(payloadPtr[0], buf, pending > sizeof(buf) ? sizeof(buf) : pending);
+        if (n < 0)
+            ESP_LOGW(TAG, "Fread %ld: d3 %04x %04x d4 %04x %04x d5 %04x %04x", (long)n, payloadPtr[1],
+                     payloadPtr[0], payloadPtr[3], payloadPtr[2], payloadPtr[5], payloadPtr[4]);
         if (n > 0) {
             uint16_t chk = 0;
             for (int32_t i = 0; i < n; i += 2)

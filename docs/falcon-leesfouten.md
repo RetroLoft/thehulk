@@ -40,6 +40,11 @@ Kopie van `S.ST` (1474560 bytes), vergeleken met het origineel op de server:
 | STE, TOS 1.62 | 0 |
 | Mega STE, TOS 2.06 | 0 |
 
+Op de Falcon is daarna toegevoegd: een checksum per leesblok met opnieuw kopiëren, en de lussen die ROM3 lezen
+draaien vanuit RAM. Resultaat op de Falcon: drie `CARTTEST`-runs zonder foute woorden, één keer `Fread` -37
+(ongeldige handle) in de tweede run, een kopie van `S.ST` identiek. Een eerdere mislukte kopie viel samen met een
+bewegende cartridge en een USB-reset. De STE (TOS 1.62) blijft foutloos met deze versie.
+
 ## Oorzaak
 De gateware liep van adres naar data via drie stappen: adresregister, SPRAM, uitgangsregister. Dat kostte
 64 ns (simulatie). In een Falcon-cyclus is dat te lang: `/ROM3` is daar 230-250 ns laag tegen 310-330 ns op de
@@ -78,13 +83,16 @@ Eerdere pogingen (v16, v17, v18, v19) maakten het slechter. Bij v18 en v19 kwame
 reden is onbekend.
 
 ## Wat nog open is
+0. **Vier bommen.** Voor de RAM-lussen stopte `CARTTEST` eens op `$FA1E42`, in de lus die een schrijfblok verstuurt:
+   een verkeerd gelezen instructie. Niet meer gezien sinds de RAM-lussen, maar daarvoor zijn er nog te weinig runs.
+   Andere GEMDRIVE-code draait nog steeds van de cartridge.
 1. **Restfouten.** Bij `CARTTEST` alle 8 op `$FB2010`, verwacht `0000` na een `FFFF`, gekregen onder meer `FF00`.
    Bij de kopie op `$FB3D54`: verwacht `0000`, na `FFFF`, gekregen `4000`. Hier blijven enen dus staan: de andere
    richting dan het hoofdprobleem. Oorzaak onbekend.
 2. **Mislukte kopie.** De eerste kopie van `S.ST` met v20 stopte met een foutmelding na ongeveer 900 KB, de tweede
    lukte. De tekst van de melding is niet genoteerd en de oorzaak is niet vastgesteld.
-3. **Checksum.** Een checksum per leesblok zou de restfouten in bestanden kunnen afvangen, maar niet in code die
-   direct van de cartridge draait. Nog niet gebouwd.
+3. **`Fread` -37.** Zeldzaam, ook al met v14 gezien. Vermoedelijk een verminkt commando of slecht contact; de firmware
+   logt nu bij een mislukte `Fread` het binnengekomen commando.
 4. **Schade aan bord 1.** Dat bord geeft geen 5 V meer door en trok de DevKit in brown-outs. Niet doorgemeten.
 
 ## Testen

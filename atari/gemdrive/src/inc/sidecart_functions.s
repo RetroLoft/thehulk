@@ -113,6 +113,12 @@ _copy_sync_code:
     move.l RANDOM_TOKEN_SEED_ADDR,d2
     addq.w #4, d1                       ; Add 4 bytes to the payload size to include the token
 
+    ; TheHulk: on the Falcon this code runs from RAM, see .code_buffer_done: instructions from
+    ; ROM4 between the reads of ROM3 are the hardest thing for the bus.
+    move.l (GEMDRVEMUL_SHARED_VARIABLES + (SHARED_VARIABLE_RAM_SEND * 4)), a1
+    cmp.w #0, a1
+    beq.s _start_async_code_in_stack
+    jmp (a1)
 _start_async_code_in_stack:
     ; TheHulk: no interrupts while this short packet goes out.
     move.w sr, -(sp)
@@ -184,6 +190,7 @@ _no_more_payload_stack:
     move.l (GEMDRVEMUL_SHARED_VARIABLES + (SHARED_VARIABLE_SYNC_TIMEOUT * 4)), d6 ; Polls of the token before the timeout, set by the ESP32
     moveq #0, d0              ; Timeout
     jmp (a3)                  ; Jump to the code in the stack
+_end_async_code_in_stack:
 ; This is the code that cannot run in ROM while waiting for the command to complete
 _start_sync_code_in_stack:
     cmp.l RANDOM_TOKEN_ADDR, d2              ; Compare the random number with the token
@@ -264,6 +271,10 @@ _copy_write_sync_code:
     lsr.w #1, d1                        ; Round to the next word
     lsl.w #1, d1                        ; Multiply by 2 because we are sending two bytes each iteration
 
+    move.l (GEMDRVEMUL_SHARED_VARIABLES + (SHARED_VARIABLE_RAM_SEND_WRITE * 4)), a1
+    cmp.w #0, a1
+    beq.s _start_async_write_code_in_stack
+    jmp (a1)
 _start_async_write_code_in_stack:   
     ; TheHulk: interrupts stay on. A 2 KB block takes up to ~40 ms on a 68000, the IKBD
     ; would lose bytes (phantom keys) and the 100 ms packet timer leaves room for them.
@@ -368,6 +379,7 @@ _write_to_sidecart_end_loop:
     move.l (GEMDRVEMUL_SHARED_VARIABLES + (SHARED_VARIABLE_SYNC_TIMEOUT * 4)), d6 ; Polls of the token before the timeout, set by the ESP32
     moveq #0, d0              ; Timeout
     jmp (a3)                  ; Jump to the code in the stack
+_end_async_write_code_in_stack:
 
 ; This is the code that cannot run in ROM while waiting for the command to complete
 _start_sync_write_code_in_stack:
