@@ -8,6 +8,7 @@
 #include <string.h>
 #include <strings.h>
 #include <time.h>
+#include "atari_charset.h"
 #include "ff.h"
 #include "gemdrv_fs.h"
 #include "gemdrv_layout.h"
@@ -264,7 +265,7 @@ static void tnfs_real_path(int slot, const char *up, char *out, size_t size)
     out[0] = 0;
     for (const char *p = up; *p == '/' && p[1] && len < size;) {
         const char *end = strchr(++p, '/');
-        char comp[13], real[sizeof(((tnfs_entry_t *)0)->name)];
+        char comp[40], real[sizeof(((tnfs_entry_t *)0)->name)];    // UTF-8: up to 3 bytes a character
         size_t n = end ? (size_t)(end - p) : strlen(p);
         snprintf(comp, sizeof(comp), "%.*s", (int)n, p);
         strlcpy(real, comp, sizeof(real));
@@ -288,12 +289,14 @@ static void tnfs_real_path(int slot, const char *up, char *out, size_t size)
     }
 }
 
+// The server keeps names in UTF-8, GEMDOS in the Atari character set
 static bool to_tnfs(int slot, const char *apath, char *out, size_t size)
 {
-    char up[MAX_PATH];
+    char up[MAX_PATH], utf8[MAX_PATH];
     if (!to_fat(slot, apath, up, sizeof(up)))
         return false;
-    tnfs_real_path(slot, up, out, size);
+    atari_to_utf8(up, utf8, sizeof(utf8));
+    tnfs_real_path(slot, utf8, out, size);
     return true;
 }
 
@@ -470,8 +473,13 @@ static int16_t next_match(search_t *s, uint8_t *dta_out)
             break;
         }
         uint8_t attr = e.is_dir ? AM_DIR : 0;
+        char name[sizeof(e.name)];
+        if (!utf8_to_atari(e.name, name, sizeof(name)))
+            continue;                   // a character the Atari does not have: hidden
+        strcpy(e.name, name);
         for (char *c = e.name; *c; c++)
-            *c = toupper((unsigned char)*c);
+            if ((unsigned char)*c < 0x80)
+                *c = toupper((unsigned char)*c);
         if (fits_gemdos(e.name) && match(s, e.name) && attribs_ok(s->attribs, attr)) {
             memset(&fno, 0, sizeof(fno));
             fno.fsize = e.size;
@@ -1060,8 +1068,9 @@ int16_t fs_dsetpath(int slot, const char *path)
         if (!to_fat(slot, path, fat, sizeof(fat)))
             return GEMDOS_EPTHNF;
         // The current folder stays in capitals, like the Atari asks for it
-        char real[MAX_PATH];
-        tnfs_real_path(slot, fat, real, sizeof(real));
+        char utf8[MAX_PATH], real[MAX_PATH];
+        atari_to_utf8(fat, utf8, sizeof(utf8));
+        tnfs_real_path(slot, utf8, real, sizeof(real));
         if (strcmp(fat, "/") && (tnfs_stat(slot, real, &size, &mtime, &is_dir) < 0 || !is_dir))
             return GEMDOS_EPTHNF;
         if (!strcmp(fat, "/"))
