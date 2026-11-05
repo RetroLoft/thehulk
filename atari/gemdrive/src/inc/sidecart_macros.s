@@ -72,3 +72,22 @@ wait_sec_or_key_press   macro
 .\@wait_sec_key_loop_exit:
                         move.l (sp)+, d7                    ; Restore the number counter reg
                         endm
+
+; TheHulk: the busy flag in GEMDRIVE's own RAM, from the start of a command until its token
+; came back: CART_NET.STX, which polls from the STinG interrupt, leaves the bus alone then.
+; Uses a2 (busy_on, before a2 is set) or a3 (busy_off, in the wait code, after its use).
+busy_on             macro
+                    move.l (GEMDRVEMUL_SHARED_VARIABLES + (SHARED_VARIABLE_CODE_BUFFER * 4)), a2
+                    cmp.w #0, a2
+                    beq.s .\@busy_on_done
+                    st CODE_BUFFER_BUSY(a2)
+.\@busy_on_done:
+                    endm
+
+busy_off            macro
+                    move.l (GEMDRVEMUL_SHARED_VARIABLES + (SHARED_VARIABLE_CODE_BUFFER * 4)), a3
+                    cmp.w #0, a3
+                    beq.s .\@busy_off_done
+                    sf CODE_BUFFER_BUSY(a3)
+.\@busy_off_done:
+                    endm

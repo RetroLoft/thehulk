@@ -104,7 +104,9 @@ ROM3_START_ADDR         equ $FB0000 ; ROM3 start address
 ROM_EXCHG_BUFFER_ADDR   equ (ROM3_START_ADDR)               ; ROM4 buffer address
 RANDOM_TOKEN_ADDR:      equ (ROM_EXCHG_BUFFER_ADDR)
 RANDOM_TOKEN_SEED_ADDR: equ (RANDOM_TOKEN_ADDR + 4) ; RANDOM_TOKEN_ADDR + 0 bytes
-CODE_BUFFER_SIZE:       equ 64        ; Bytes of RAM for the token wait code
+CODE_BUFFER_SIZE:       equ 96        ; Bytes of RAM for the token wait code
+CODE_BUFFER_BUSY:       equ CODE_BUFFER_SIZE - 2  ; TheHulk: byte, non-zero while a command is in progress
+                                      ; (CART_NET.STX polls from an interrupt: it waits for this)
 HOOK_STACK_SIZE:        equ 1024      ; Bytes of RAM for the stack of the GEMDOS hook, also holds its temporary data
 RAM_CODE_SIZE:          equ 1280      ; Bytes of RAM on the Falcon for the routines that read ROM3 in a loop
 HOOK_STACK_FILL:        equ $48554C4B ; TheHulk diagnostics: what is still there has not been used
@@ -2574,4 +2576,11 @@ _end_fread_copy_code:
 ; TheHulk: the routines that run from RAM on the Falcon must fit in RAM_CODE_SIZE
     ifgt (_end_async_code_in_stack-_start_async_code_in_stack)+(_end_async_write_code_in_stack-_start_async_write_code_in_stack)+(_end_fread_copy_code-_fread_copy_code)-RAM_CODE_SIZE
     fail "RAM_CODE_SIZE is too small"
+    endif
+; TheHulk: the token wait code must leave the busy flag alone
+    ifgt (_end_sync_code_in_stack-_start_sync_code_in_stack)-CODE_BUFFER_BUSY
+    fail "the sync wait code reaches CODE_BUFFER_BUSY"
+    endif
+    ifgt (_end_sync_write_code_in_stack-_start_sync_write_code_in_stack)-CODE_BUFFER_BUSY
+    fail "the sync write wait code reaches CODE_BUFFER_BUSY"
     endif

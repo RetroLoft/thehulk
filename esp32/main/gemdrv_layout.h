@@ -212,3 +212,17 @@ static inline void write_and_swap_longword(uintptr_t address, uint32_t offset, u
 #define WRITE_AND_SWAP_LONGWORD(address, offset, data) \
     write_and_swap_longword((uintptr_t)(address), (offset), (uint32_t)(data))
 #define WRITE_WORD(address, offset, data) *((volatile uint16_t *)((address) + (offset))) = (data)
+
+// The network for the Atari (STinG, CART_NET.STX): commands and the area in ROM3 they use.
+// The frame formats are those of ACSI2TNFS (ACSI_NET-ontwerp.md there): a header of 8 bytes,
+// big-endian (length, frames still waiting, dropped, flags), then the Ethernet frame.
+#define GEMDRVEMUL_NET_INFO_CALL    0x0620  // -> NET_INFO: "ATN", version, state, addresses
+#define GEMDRVEMUL_NET_CTRL_CALL    0x0621  // 16 bytes: "ATN", 0, version.w, on/off.w, ip.l, mask.l
+#define GEMDRVEMUL_NET_TX_CALL      0x0622  // header and frame
+#define GEMDRVEMUL_NET_RX_CALL      0x0623  // -> NET_RX: header and frame, length 0: none
+#define GEMDRVEMUL_NET_PENDING      0x06000 // word: frames waiting for the Atari, read without a command
+#define GEMDRVEMUL_NET_STATUS       0x06004 // long: the result of the last command, 0 = ok
+#define GEMDRVEMUL_NET_INFO         0x06010 // 128 bytes
+#define GEMDRVEMUL_NET_INFO_SIZE    128
+#define GEMDRVEMUL_NET_RX           0x06100 // header and frame, up to 8 + 1514 bytes
+#define GEMDRVEMUL_NET_HDR          8

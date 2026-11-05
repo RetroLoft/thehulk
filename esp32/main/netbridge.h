@@ -22,6 +22,11 @@ uint32_t net_bridge_rx(uint8_t *buf, uint32_t size, uint32_t *pending);
 // A frame from the Atari: sends it. Returns 0, or 1 when it was not accepted
 uint32_t net_bridge_tx(const uint8_t *frame, uint32_t len);
 
+uint32_t net_bridge_pending(void);      // frames waiting for the Atari
+// NET_INFO for the Atari, 128 bytes as in ACSI2TNFS: "ATN", version, capabilities, state,
+// MAC, the ESP32's IP, mask and gateway, the Atari's IP and mask, MTU, counters
+void net_bridge_info(uint8_t *b, bool link);
+
 void net_bridge_status(void);           // to the log: addresses and counters
 // Diagnostics: the ESP32 itself answers ARP and ping for 'ip', as the Atari would
 void net_bridge_test(uint32_t ip);

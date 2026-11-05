@@ -15,7 +15,7 @@ static const char *TAG = "net";
 
 static esp_netif_t *s_netif;
 static uint8_t s_mac[6];
-static volatile uint32_t s_my_ip, s_atari_ip, s_atari_mask;
+static volatile uint32_t s_my_ip, s_my_mask, s_my_gw, s_atari_ip, s_atari_mask;
 
 static uint8_t s_rx_buf[RX_SLOTS][NET_FRAME_MAX];
 static volatile uint16_t s_rx_len[RX_SLOTS];
@@ -27,6 +27,7 @@ static uint32_t s_test_ip;
 static uint32_t get16(const uint8_t *p) { return (uint32_t)p[0] << 8 | p[1]; }
 static uint32_t get32(const uint8_t *p) { return get16(p) << 16 | get16(p + 2); }
 static void put16(uint8_t *p, uint32_t v) { p[0] = v >> 8; p[1] = v; }
+static void put32(uint8_t *p, uint32_t v) { put16(p, v >> 16); put16(p + 2, v); }
 
 // Its IP address as an IPv4 destination or as the target of ARP
 static bool for_atari(const uint8_t *f, uint32_t len)
@@ -61,6 +62,8 @@ void net_bridge_install(esp_netif_t *netif, const esp_netif_ip_info_t *ip)
 {
     s_netif = netif;
     s_my_ip = __builtin_bswap32(ip->ip.addr);
+    s_my_mask = __builtin_bswap32(ip->netmask.addr);
+    s_my_gw = __builtin_bswap32(ip->gw.addr);
     esp_wifi_get_mac(WIFI_IF_STA, s_mac);
     // esp_netif registered its own receive function when the station started: ours
     // passes everything that is not for the Atari on to it
@@ -122,6 +125,33 @@ uint32_t net_bridge_tx(const uint8_t *f, uint32_t len)
     }
     s_tx++;
     return 0;
+}
+
+uint32_t net_bridge_pending(void)
+{
+    return s_rx_head - s_rx_tail;
+}
+
+void net_bridge_info(uint8_t *b, bool link)
+{
+    memset(b, 0, 128);
+    memcpy(b, "ATN", 3);
+    put16(b + 4, 1);                            // protocol version
+    put16(b + 6, 0x0001 | (link ? 0x0002 : 0)); // NET_CTRL works, frames can pass
+    b[8] = (link ? 0x01 : 0) | (s_atari_ip ? 0x02 : 0);
+    memcpy(b + 10, s_mac, 6);
+    put32(b + 16, s_my_ip);
+    put32(b + 20, s_my_mask);
+    put32(b + 24, s_my_gw);
+    put32(b + 28, s_atari_ip);
+    put32(b + 32, s_atari_mask);
+    put16(b + 36, 1500);                        // MTU
+    b[40] = RX_SLOTS;
+    put32(b + 44, s_rx);
+    put32(b + 48, s_tx);
+    put32(b + 52, s_rx_drop);
+    put32(b + 56, s_tx_bad + s_tx_err);
+    memcpy(b + 64, "TheHulk", 8);
 }
 
 void net_bridge_status(void)

@@ -86,6 +86,7 @@ get_tos_version:
 ; d1-d7 are modified. a0-a3 modified.
 send_sync_command_to_sidecart:
     move.l (sp)+, a0                 ; Return address
+    busy_on
     move.l #_end_sync_code_in_stack - _start_sync_code_in_stack, d6
 
     tst.l (GEMDRVEMUL_SHARED_VARIABLES + (SHARED_VARIABLE_BUFFER_TYPE * 4))
@@ -220,6 +221,7 @@ _wait_me:
     beq.s ._wait_me_restore_dskbuff
     lea (_end_sync_code_in_stack - _start_sync_code_in_stack)(sp), sp
 ._wait_me_restore_dskbuff:
+    busy_off
     jmp (a2)                                 ; Return to the code in the ROM
 
     even    ; Do not remove this line
@@ -243,6 +245,7 @@ _end_sync_code_in_stack:
 ; d1-d6 are modified. a0-a3 modified.
 send_sync_write_command_to_sidecart:
     move.l (sp)+, a0                 ; Return address
+    busy_on
     move.l #_end_sync_write_code_in_stack - _start_sync_write_code_in_stack, d7
 
     tst.l (GEMDRVEMUL_SHARED_VARIABLES + (SHARED_VARIABLE_BUFFER_TYPE * 4))
@@ -417,6 +420,7 @@ _wait_me_write:
     beq.s ._wait_me_write_restore_dskbuff
     lea (_end_sync_write_code_in_stack - _start_sync_write_code_in_stack)(sp), sp
 ._wait_me_write_restore_dskbuff:
+    busy_off
     jmp (a2)                                 ; Return to the code in the ROM
 
     even    ; Do not remove this line

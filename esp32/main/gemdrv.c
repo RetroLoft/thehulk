@@ -12,6 +12,7 @@
 #include "gemdrv.h"
 #include "gemdrv_fs.h"
 #include "gemdrv_layout.h"
+#include "netbridge.h"
 #include "settings.h"
 #include "wifi.h"
 #include "shadow.h"
@@ -245,6 +246,43 @@ static void write_bytes(uint32_t offset, const uint8_t *data, size_t len)
         mem[i ^ 1] = data[i];
 }
 
+// --- The network for the Atari ----------------------------------------------------
+
+static uint32_t get16be(const uint8_t *p) { return (uint32_t)p[0] << 8 | p[1]; }
+static uint32_t get32be(const uint8_t *p) { return get16be(p) << 16 | get16be(p + 2); }
+
+// The payload of a network command as bytes: words after the token, high byte first
+static uint32_t net_payload(const hulk_packet_t *pkt, uint8_t *b, uint32_t size)
+{
+    uint32_t n = pkt->size > 4 ? pkt->size - 4 : 0;
+    if (n > size)
+        n = size;
+    for (uint32_t i = 0; i < n; i++)
+        b[i] = i & 1 ? pkt->words[2 + i / 2] & 0xFF : pkt->words[2 + i / 2] >> 8;
+    return n;
+}
+
+static void net_status(uintptr_t m, uint32_t status)
+{
+    WRITE_AND_SWAP_LONGWORD(m, GEMDRVEMUL_NET_STATUS, status);
+    shadow_mark(SHADOW_ROM3 + GEMDRVEMUL_NET_STATUS, 4);
+}
+
+// The word CART_NET.STX polls: frames waiting, without a command
+static bool net_pending_publish(uintptr_t m)
+{
+    uint8_t b[2];
+    uint32_t n = net_bridge_pending();
+    b[0] = n >> 8;
+    b[1] = n;
+    uint8_t *mem = (uint8_t *)m + GEMDRVEMUL_NET_PENDING;
+    if (mem[1] == b[0] && mem[0] == b[1])       // stored like write_bytes: bytes swapped
+        return false;
+    write_bytes(GEMDRVEMUL_NET_PENDING, b, 2);
+    shadow_mark(SHADOW_ROM3 + GEMDRVEMUL_NET_PENDING, 2);
+    return true;
+}
+
 // Dfree and Dgetpath give the GEMDOS drive number, the others the slot
 static int slot_of_drive(uint16_t drive)
 {
@@ -330,6 +368,8 @@ bool gemdrv_poll(void)
         changed = true;
     }
 #endif
+    if (net_pending_publish(m))
+        changed = true;
     v = status_word(wifi_time_state());     // after the time it announces
     if (*rtc != v) {
         *rtc = v;
@@ -476,6 +516,7 @@ void gemdrv_command(const hulk_packet_t *pkt)
             set_shared_var(SHARED_VARIABLE_RAM_SEND, 0);
             set_shared_var(SHARED_VARIABLE_RAM_SEND_WRITE, 0);
             set_shared_var(SHARED_VARIABLE_RAM_FREAD_COPY, 0);
+            net_bridge_set(0, 0);       // STinG is gone with the reset
             fs_reset();
             // The keyboard clock of TOS 1 cannot hold a year after 1999. GEMDRIVE then
             // sets a year 30 back and corrects XBIOS Gettime. A low word with the high
@@ -819,6 +860,46 @@ void gemdrv_command(const hulk_packet_t *pkt)
     case GEMDRVEMUL_DEBUG:
         debug_command(pkt);
         break;
+
+    // --- The network for the Atari (CART_NET.STX, netbridge.c) -------------------------
+    case GEMDRVEMUL_NET_INFO_CALL: {
+        uint8_t info[GEMDRVEMUL_NET_INFO_SIZE];
+        net_bridge_info(info, wifi_link_state() == WIFI_STATE_READY);
+        write_bytes(GEMDRVEMUL_NET_INFO, info, sizeof(info));
+        shadow_mark(SHADOW_ROM3 + GEMDRVEMUL_NET_INFO, sizeof(info));
+        net_status(m, 0);
+        break;
+    }
+    case GEMDRVEMUL_NET_CTRL_CALL: {
+        uint8_t b[16];
+        net_payload(pkt, b, sizeof(b));
+        uint32_t r = 1;                             // not for us
+        if (!memcmp(b, "ATN", 4) && get16be(b + 4) == 1)
+            r = get16be(b + 6) == 1 ? net_bridge_set(get32be(b + 8), get32be(b + 12))
+                                    : get16be(b + 6) == 0 ? net_bridge_set(0, 0) : 2;
+        net_status(m, r);
+        break;
+    }
+    case GEMDRVEMUL_NET_TX_CALL: {
+        static uint8_t b[GEMDRVEMUL_NET_HDR + NET_FRAME_MAX];
+        uint32_t n = net_payload(pkt, b, sizeof(b)), len = get16be(b);
+        net_status(m, len && GEMDRVEMUL_NET_HDR + len <= n ? net_bridge_tx(b + GEMDRVEMUL_NET_HDR, len) : 1);
+        break;
+    }
+    case GEMDRVEMUL_NET_RX_CALL: {
+        static uint8_t b[GEMDRVEMUL_NET_HDR + NET_FRAME_MAX];
+        uint32_t pending, len = net_bridge_rx(b + GEMDRVEMUL_NET_HDR, NET_FRAME_MAX, &pending);
+        memset(b, 0, GEMDRVEMUL_NET_HDR);
+        b[0] = len >> 8;
+        b[1] = len;
+        b[2] = pending >> 8;
+        b[3] = pending;
+        write_bytes(GEMDRVEMUL_NET_RX, b, (GEMDRVEMUL_NET_HDR + len + 1) & ~1u);
+        shadow_mark(SHADOW_ROM3 + GEMDRVEMUL_NET_RX, GEMDRVEMUL_NET_HDR + len + 1);
+        net_pending_publish(m);
+        net_status(m, 0);
+        break;
+    }
 
     case GEMDRVEMUL_CANCEL:
     case GEMDRVEMUL_SHOW_VECTOR_CALL:
