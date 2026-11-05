@@ -1,6 +1,6 @@
-idf_component_register(SRCS "main.c" "fpga.c" "hulk.c" "status_led.c" "bootrec.c" "shadow.c" "gemdrv.c" "gemdrv_fs.c" "settings.c" "wifi.c" "tnfs.c" "sd.c"
+idf_component_register(SRCS "main.c" "fpga.c" "hulk.c" "status_led.c" "console.c" "bootrec.c" "shadow.c" "gemdrv.c" "gemdrv_fs.c" "settings.c" "wifi.c" "tnfs.c" "sd.c"
                        INCLUDE_DIRS "."
-                       PRIV_REQUIRES esp_wifi esp_netif esp_event lwip esp_driver_spi esp_driver_gpio esp_driver_rmt esp_timer nvs_flash esp_hw_support fatfs sdmmc esp_driver_sdspi vfs)
+                       PRIV_REQUIRES esp_wifi esp_netif esp_event lwip esp_driver_spi esp_driver_gpio esp_driver_rmt esp_timer nvs_flash esp_hw_support fatfs sdmmc esp_driver_sdspi vfs esp_driver_uart esp_driver_usb_serial_jtag)
 
 # FPGA bitstream, built by ../fpga (make)
 set(FPGA_BITSTREAM "${CMAKE_CURRENT_LIST_DIR}/../../fpga/build/thehulk.bin")

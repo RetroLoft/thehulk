@@ -89,3 +89,9 @@ int settings_net_save(void);
 const settings_rtc_t *settings_rtc(void);
 int settings_rtc_stage(const settings_rtc_t *in);
 int settings_rtc_save(void);
+
+// The cartridge switched off (button 1 or the console). From the next reset of the Atari
+// GEMDRIVE does not install itself, from the next power-on the Atari does not see the
+// cartridge at all. Switched on, it is there again from the next reset. Kept in NVS.
+bool settings_cart_off(void);
+bool settings_set_cart_off(bool off);

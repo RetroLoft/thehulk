@@ -1822,6 +1822,12 @@ _notlong:
     move.l (GEMDRVEMUL_SHARED_VARIABLES + (SHARED_VARIABLE_RAM_FREAD_COPY * 4)), a5
     cmp.w #0, a5
     beq.s .fread_copy_rom
+    move.l (a5), d7                      ; Still this code? See _start_async_code_in_stack
+    cmp.l _fread_copy_code, d7
+    bne.s .fread_copy_rom
+    move.l 4(a5), d7
+    cmp.l _fread_copy_code + 4, d7
+    bne.s .fread_copy_rom
     jsr (a5)                             ; TheHulk: on the Falcon from RAM, see .code_buffer_done
     bra.s .fread_copy_exit
 .fread_copy_rom:

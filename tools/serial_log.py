@@ -3,7 +3,11 @@
 
 usage: serial_log.py PORT SECONDS LOGFILE [--reset]
 --reset pulses RTS to reset the ESP32 first.
+
+Keys for the console go through this connection: whatever is written to LOGFILE.in is sent
+to the ESP32 and the file is emptied. Opening the port a second time resets the ESP32.
 """
+import os
 import sys
 import time
 
@@ -22,8 +26,13 @@ if '--reset' in sys.argv:
     time.sleep(0.1)
     s.rts = False
 end = time.time() + secs
+keys = path + '.in'
 with open(path, 'a') as f:
     while time.time() < end:
+        if os.path.exists(keys) and os.path.getsize(keys):
+            with open(keys, 'r+b') as k:
+                s.write(k.read())
+                k.truncate(0)
         data = s.read(4096)
         if data:
             f.write(data.decode('utf-8', 'replace'))

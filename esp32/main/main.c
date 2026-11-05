@@ -28,6 +28,7 @@
 #include "hulk.h"
 #include "sd.h"
 #include "settings.h"
+#include "console.h"
 #include "shadow.h"
 #include "status_led.h"
 #include "wifi.h"
@@ -40,6 +41,7 @@ extern const uint8_t rom_start[]       asm("_binary_rom_img_start");
 extern const uint8_t rom_end[]         asm("_binary_rom_img_end");
 
 static bootrec_t s_rec;
+static bool s_rom_on;           // the Atari can read the cartridge
 
 // The log goes through a buffer to a task on the second core: a UART line takes
 // ~9 ms, and GEMDRIVE waits for the answer to each command (on a Falcon it gives up
@@ -216,7 +218,11 @@ static void start_cartridge(void)
 #ifdef HULK_CART_OFF
                 ESP_LOGW(TAG, "diagnostics build: cartridge stays disabled");
 #else
-                hulk_set_ctrl(HULK_CTRL_ROM_EN);
+                s_rom_on = !settings_cart_off();
+                if (s_rom_on)
+                    hulk_set_ctrl(HULK_CTRL_ROM_EN);
+                else
+                    ESP_LOGW(TAG, "cartridge switched off (button 1 or the console): the Atari does not see it");
 #endif
                 s_rec.t_enabled = now_ms();
                 hulk_status_t st;
@@ -226,7 +232,8 @@ static void start_cartridge(void)
                 }
                 // Then the rest, GEMDRIVE reads its shared memory ~2 s after power-on
                 shadow_write_range(done, HULK_ROM_SIZE - done);
-                ESP_LOGI(TAG, "cartridge enabled (gateware v%d, image %u bytes, %lu ms)",
+                ESP_LOGI(TAG, "cartridge %s (gateware v%d, image %u bytes, %lu ms)",
+                         settings_cart_off() ? "loaded, switched off" : "enabled",
                          version, (unsigned)rom_len(), (unsigned long)(now_ms() - s_rec.t_enabled));
                 status_led_fatal(false);
                 return;
@@ -335,6 +342,7 @@ void app_main(void)
     irq_start();
     status_led_init();
     sd_start();
+    console_start();
 #ifdef HULK_DIAG_PATTERN
     diag_pattern_loop();
 #endif
@@ -397,6 +405,13 @@ void app_main(void)
         while (fpga_power_present() && fpga_done()) {
             wait_for_packet();
             handle_packets();
+#ifndef HULK_CART_OFF
+            // Switched on while the Atari runs without it: TOS finds it at the next reset
+            if (!s_rom_on && !settings_cart_off()) {
+                s_rom_on = hulk_set_ctrl(HULK_CTRL_ROM_EN) == ESP_OK;
+                ESP_LOGI(TAG, "cartridge enabled, the Atari finds it at its next reset");
+            }
+#endif
             if (hulk_get_status(&st) != ESP_OK)
                 continue;
             int64_t now = esp_timer_get_time();

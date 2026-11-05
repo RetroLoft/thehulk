@@ -1,0 +1,87 @@
+// Button 1 and commands on the serial console, see console.h. Both serial ports are read:
+// the UART of the CH343 and the native USB port.
+#include <stdbool.h>
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "driver/gpio.h"
+#include "driver/uart.h"
+#include "driver/usb_serial_jtag.h"
+#include "esp_log.h"
+#include "board.h"
+#include "console.h"
+#include "settings.h"
+#include "status_led.h"
+
+static const char *TAG = "console";
+
+#define POLL_MS     20
+#define DEBOUNCE    3           // polls the button must agree
+
+static void set_cart_off(bool off)
+{
+    if (!settings_set_cart_off(off)) {
+        ESP_LOGE(TAG, "could not save the setting");
+        return;
+    }
+    status_led_cart_off(off);
+    ESP_LOGW(TAG, "cartridge %s from the next reset or power-on of the Atari", off ? "OFF" : "ON");
+}
+
+static void command(char c)
+{
+    switch (c) {
+    case 'd':
+        set_cart_off(true);
+        break;
+    case 'e':
+        set_cart_off(false);
+        break;
+    case 's':
+        ESP_LOGI(TAG, "cartridge %s", settings_cart_off() ? "off" : "on");
+        break;
+    case '\r':
+    case '\n':
+        break;
+    default:
+        ESP_LOGI(TAG, "keys: d = cartridge off, e = cartridge on, s = status. Button 1 switches.");
+        break;
+    }
+}
+
+static void console_task(void *arg)
+{
+    bool uart = uart_driver_install(CONFIG_ESP_CONSOLE_UART_NUM, 256, 0, 0, NULL, 0) == ESP_OK;
+    usb_serial_jtag_driver_config_t usb_cfg = USB_SERIAL_JTAG_DRIVER_CONFIG_DEFAULT();
+    bool usb = usb_serial_jtag_driver_install(&usb_cfg) == ESP_OK;
+    gpio_config_t btn = {
+        .pin_bit_mask = BIT64(PIN_BTN1),
+        .mode = GPIO_MODE_INPUT,
+        .pull_up_en = GPIO_PULLUP_ENABLE,
+    };
+    gpio_config(&btn);
+    status_led_cart_off(settings_cart_off());
+
+    bool pressed = false;
+    int same = 0;
+    for (;;) {
+        char c;
+        if (uart && uart_read_bytes(CONFIG_ESP_CONSOLE_UART_NUM, &c, 1, 0) == 1)
+            command(c);
+        if (usb && usb_serial_jtag_read_bytes(&c, 1, 0) == 1)
+            command(c);
+        bool now = !gpio_get_level(PIN_BTN1);
+        same = now != pressed ? same + 1 : 0;
+        if (same >= DEBOUNCE) {
+            same = 0;
+            pressed = now;
+            if (pressed)
+                set_cart_off(!settings_cart_off());
+        }
+        vTaskDelay(pdMS_TO_TICKS(POLL_MS));
+    }
+}
+
+void console_start(void)
+{
+    xTaskCreatePinnedToCore(console_task, "console", 3072, NULL, 1, NULL, 1);
+}

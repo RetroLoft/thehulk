@@ -280,3 +280,34 @@ int settings_rtc_save(void)
     s_rtc_is_staged = false;
     return write_blob() ? SETTINGS_RTC_OK : SETTINGS_RTC_WRITE_FAILED;
 }
+
+// Separate from the blob: switching the cartridge off must not reset the settings
+#define NVS_KEY_CART_OFF "cart_off"
+
+static int s_cart_off = -1;     // -1: not read from NVS yet
+
+bool settings_cart_off(void)
+{
+    if (s_cart_off < 0) {
+        nvs_handle_t h;
+        uint8_t off = 0;
+        if (nvs_open(NVS_NS, NVS_READONLY, &h) == ESP_OK) {
+            nvs_get_u8(h, NVS_KEY_CART_OFF, &off);
+            nvs_close(h);
+        }
+        s_cart_off = off != 0;
+    }
+    return s_cart_off;
+}
+
+bool settings_set_cart_off(bool off)
+{
+    nvs_handle_t h;
+    if (nvs_open(NVS_NS, NVS_READWRITE, &h) != ESP_OK)
+        return false;
+    bool ok = nvs_set_u8(h, NVS_KEY_CART_OFF, off) == ESP_OK && nvs_commit(h) == ESP_OK;
+    nvs_close(h);
+    if (ok)
+        s_cart_off = off;
+    return ok;
+}

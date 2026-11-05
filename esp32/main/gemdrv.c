@@ -321,6 +321,15 @@ bool gemdrv_poll(void)
         write_datetime(&t);
         changed = true;
     }
+#ifndef HULK_GEMDRIVE_OFF
+    // Button 1 or the console: GEMDRIVE reads this when it starts, after the next reset
+    volatile uint16_t *install = (volatile uint16_t *)(m + GEMDRVEMUL_FLOPPY_SESSION_INSTALL_GEMDRIVE);
+    if (*install != !settings_cart_off()) {
+        *install = !settings_cart_off();
+        shadow_mark(SHADOW_ROM3 + GEMDRVEMUL_FLOPPY_SESSION_INSTALL_GEMDRIVE, 2);
+        changed = true;
+    }
+#endif
     v = status_word(wifi_time_state());     // after the time it announces
     if (*rtc != v) {
         *rtc = v;
@@ -348,7 +357,7 @@ void gemdrv_init(void)
 #ifdef HULK_GEMDRIVE_OFF
     WRITE_WORD(m, GEMDRVEMUL_FLOPPY_SESSION_INSTALL_GEMDRIVE, 0);
 #else
-    WRITE_WORD(m, GEMDRVEMUL_FLOPPY_SESSION_INSTALL_GEMDRIVE, 1);
+    WRITE_WORD(m, GEMDRVEMUL_FLOPPY_SESSION_INSTALL_GEMDRIVE, !settings_cart_off());
 #endif
     WRITE_WORD(m, GEMDRVEMUL_FLOPPY_SESSION_INSTALL_FLOPPY, 0);
 

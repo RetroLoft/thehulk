@@ -114,10 +114,18 @@ _copy_sync_code:
     addq.w #4, d1                       ; Add 4 bytes to the payload size to include the token
 
     ; TheHulk: on the Falcon this code runs from RAM, see .code_buffer_done: instructions from
-    ; ROM4 between the reads of ROM3 are the hardest thing for the bus.
+    ; ROM4 between the reads of ROM3 are the hardest thing for the bus. After a warm reset the
+    ; address is the one of the previous boot until the first command: use that RAM only
+    ; while it still holds this code.
     move.l (GEMDRVEMUL_SHARED_VARIABLES + (SHARED_VARIABLE_RAM_SEND * 4)), a1
     cmp.w #0, a1
     beq.s _start_async_code_in_stack
+    move.l (a1), d7
+    cmp.l _start_async_code_in_stack, d7
+    bne.s _start_async_code_in_stack
+    move.l 4(a1), d7
+    cmp.l _start_async_code_in_stack + 4, d7
+    bne.s _start_async_code_in_stack
     jmp (a1)
 _start_async_code_in_stack:
     ; TheHulk: no interrupts while this short packet goes out.
@@ -274,6 +282,12 @@ _copy_write_sync_code:
     move.l (GEMDRVEMUL_SHARED_VARIABLES + (SHARED_VARIABLE_RAM_SEND_WRITE * 4)), a1
     cmp.w #0, a1
     beq.s _start_async_write_code_in_stack
+    move.l (a1), d7                      ; Still this code? See _start_async_code_in_stack
+    cmp.l _start_async_write_code_in_stack, d7
+    bne.s _start_async_write_code_in_stack
+    move.l 4(a1), d7
+    cmp.l _start_async_write_code_in_stack + 4, d7
+    bne.s _start_async_write_code_in_stack
     jmp (a1)
 _start_async_write_code_in_stack:   
     ; TheHulk: interrupts stay on. A 2 KB block takes up to ~40 ms on a 68000, the IKBD
