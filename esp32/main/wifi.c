@@ -15,6 +15,7 @@
 #include "esp_sntp.h"
 #include "esp_wifi.h"
 #include "lwip/ip4_addr.h"
+#include "netbridge.h"
 #include "settings.h"
 #include "wifi.h"
 
@@ -62,6 +63,7 @@ static void on_event(void *arg, esp_event_base_t base, int32_t id, void *data)
     } else if (base == IP_EVENT && id == IP_EVENT_STA_GOT_IP) {
         ip_event_got_ip_t *e = data;
         ESP_LOGI(TAG, "connected, address " IPSTR, IP2STR(&e->ip_info.ip));
+        net_bridge_install(e->esp_netif, &e->ip_info);
         s_link = WIFI_STATE_READY;
         xEventGroupSetBits(s_events, BIT_GOT_IP);
     }

@@ -9,6 +9,7 @@
 #include "esp_log.h"
 #include "board.h"
 #include "console.h"
+#include "netbridge.h"
 #include "settings.h"
 #include "status_led.h"
 
@@ -27,6 +28,8 @@ static void set_cart_off(bool off)
     ESP_LOGW(TAG, "cartridge %s from the next reset or power-on of the Atari", off ? "OFF" : "ON");
 }
 
+static bool s_test;
+
 static void command(char c)
 {
     switch (c) {
@@ -39,11 +42,19 @@ static void command(char c)
     case 's':
         ESP_LOGI(TAG, "cartridge %s", settings_cart_off() ? "off" : "on");
         break;
+    case 'w':
+        net_bridge_status();
+        break;
+    case 't':                           // diagnostics: the ESP32 plays an Atari on .211
+        s_test = !s_test;
+        net_bridge_test(s_test ? 0xC0A8B2D3 : 0);
+        break;
     case '\r':
     case '\n':
         break;
     default:
-        ESP_LOGI(TAG, "keys: d = cartridge off, e = cartridge on, s = status. Button 1 switches.");
+        ESP_LOGI(TAG, "keys: d = cartridge off, e = cartridge on, s = status, w = network. "
+                 "Button 1 switches.");
         break;
     }
 }
@@ -77,6 +88,7 @@ static void console_task(void *arg)
             if (pressed)
                 set_cart_off(!settings_cart_off());
         }
+        net_bridge_test_poll();
         vTaskDelay(pdMS_TO_TICKS(POLL_MS));
     }
 }
