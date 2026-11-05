@@ -458,7 +458,9 @@ void gemdrv_command(const hulk_packet_t *pkt)
     const uint16_t *payloadPtr = pkt->words + 2;
 #if HULK_GEMDRIVE_NO_INSTALL
     static unsigned s_seq;
-    ESP_LOGI(TAG, "#%u cmd %04x, %u bytes, token %08lx", ++s_seq, pkt->cmd, pkt->size, (unsigned long)random_token);
+    ++s_seq;
+    if ((pkt->cmd & 0xFFF0) != 0x0620)      // the network: too many
+        ESP_LOGI(TAG, "#%u cmd %04x, %u bytes, token %08lx", s_seq, pkt->cmd, pkt->size, (unsigned long)random_token);
 #endif
 
     switch (pkt->cmd) {

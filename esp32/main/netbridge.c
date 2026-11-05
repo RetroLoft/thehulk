@@ -11,7 +11,7 @@
 
 static const char *TAG = "net";
 
-#define RX_SLOTS    8           // a power of two
+#define RX_SLOTS    32          // a power of two
 
 static esp_netif_t *s_netif;
 static uint8_t s_mac[6];
