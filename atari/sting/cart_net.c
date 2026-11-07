@@ -30,7 +30,7 @@ typedef BASEPAGE BASPAG;                    /* Pure C name used by the headers *
 
 #define DRIVER_NAME   "CART_NET.STX"
 #define PORT_NAME     "TheHulk"
-#define VERSION       "00.01"
+#define VERSION     "00.02"
 #define MOD_DATE      (((2026 - 1980) << 9) | (11 << 5) | 5)
 
 #define MAX_FRAMES_PER_POLL 16              /* receive: frames per STinG call */

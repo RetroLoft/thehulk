@@ -3,9 +3,13 @@
  * read: a command is a read of $FBABCD, then each word as two reads at $FB0000 + 2 * byte,
  * high byte first. TheHulk answers in ROM3 and echoes the token at $FB0000.
  *
- * STinG calls the driver from its 200 Hz interrupt. A command from GEMDRIVE may be in
- * progress underneath: GEMDRIVE then has its busy flag set (CODE_BUFFER_BUSY in
+ * STinG calls the driver from its 200 Hz interrupt. A command from GEMDRIVE or THEHULK.PRG
+ * may be in progress underneath: they then have the busy flag set (CODE_BUFFER_BUSY in
  * gemdrive.s) and we do nothing this time, as ACSI_NET.STX does with flock.
+ * Outside its own commands the driver must not read ROM3 at all: the gateware would take
+ * such a read as a byte of the command being sent (seen on the Falcon: a 0 byte slipped
+ * into write blocks and drive settings). So the busy flag's address is read once, when the
+ * driver loads, and the "frames waiting" word comes from its copy in ROM4.
  */
 #include "cartnet.h"
 
@@ -17,7 +21,7 @@
 #define SHARED_VARS     0x4198L             /* GEMDRVEMUL_SHARED_VARIABLES */
 #define VAR_CODE_BUFFER (16 + 20)           /* SHARED_VARIABLE_CODE_BUFFER */
 #define CODE_BUFFER_BUSY 94                 /* gemdrive.s */
-#define NET_PENDING     0x6000L
+#define NET_PENDING_ROM4 0xfff0L            /* GEMDRVEMUL_NET_PENDING_ROM4 */
 #define NET_STATUS      0x6004L
 #define NET_INFO_AREA   0x6010L
 #define NET_RX_AREA     0x6100L
@@ -25,6 +29,7 @@
 #define TOKEN_POLLS     500000L             /* > 1 s on a Falcon: TheHulk answers in ms */
 
 static volatile int in_use;
+static unsigned long code_buffer;          /* GEMDRIVE's, with the busy flag */
 
 static unsigned long rom3_long(unsigned long offset)
 {
@@ -39,18 +44,21 @@ static void send_word(unsigned int w)
 
 static int gemdrive_busy(void)
 {
-    unsigned long code = rom3_long(SHARED_VARS + VAR_CODE_BUFFER * 4L);
-    return code && *(volatile unsigned char *)(code + CODE_BUFFER_BUSY);
+    return code_buffer && *(volatile unsigned char *)(code_buffer + CODE_BUFFER_BUSY);
 }
 
+/* Process context (loading, the installer): no command can be half sent here */
 int cart_find(void)
 {
-    return *(volatile unsigned long *)ROM4 == CART_MAGIC ? 0 : -1;
+    if (*(volatile unsigned long *)ROM4 != CART_MAGIC)
+        return -1;
+    code_buffer = rom3_long(SHARED_VARS + VAR_CODE_BUFFER * 4L);
+    return 0;
 }
 
 int cart_pending(void)
 {
-    return *(volatile unsigned short *)(ROM3 + NET_PENDING);
+    return *(volatile unsigned short *)(ROM4 + NET_PENDING_ROM4);
 }
 
 long cart_net(int cmd, void *buf, int len, int write)

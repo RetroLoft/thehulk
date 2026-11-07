@@ -191,6 +191,7 @@
 #define GEMDRVEMUL_CONFIG_SAVE_RTC          0x0418
 #define GEMDRVEMUL_CONFIG_RESTART           0x041b
 #define GEMDRVEMUL_CONFIG_CHECK_UPDATE      0x041c
+#define GEMDRVEMUL_CONFIG_SD_FOLDER         0x041d   // TheHulk: is a folder on the card, or create it
 #define GEMDRVEMUL_READ_BUFF_CALL           0x0481
 #define GEMDRVEMUL_DEBUG                    0x0482
 #define GEMDRVEMUL_SAVE_BASEPAGE            0x0483
@@ -221,6 +222,10 @@ static inline void write_and_swap_longword(uintptr_t address, uint32_t offset, u
 #define GEMDRVEMUL_NET_TX_CALL      0x0622  // header and frame
 #define GEMDRVEMUL_NET_RX_CALL      0x0623  // -> NET_RX: header and frame, length 0: none
 #define GEMDRVEMUL_NET_PENDING      0x06000 // word: frames waiting for the Atari, read without a command
+// The same word in /ROM4 (offset from 0xFA0000, past the GEMDRIVE image): CART_NET.STX polls
+// it from an interrupt, and a /ROM3 read there could land in the middle of a command that
+// GEMDRIVE or THEHULK.PRG is sending (the gateware would take it as a byte of it).
+#define GEMDRVEMUL_NET_PENDING_ROM4 0x0fff0
 #define GEMDRVEMUL_NET_STATUS       0x06004 // long: the result of the last command, 0 = ok
 #define GEMDRVEMUL_NET_INFO         0x06010 // 128 bytes
 #define GEMDRVEMUL_NET_INFO_SIZE    128

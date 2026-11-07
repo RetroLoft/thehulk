@@ -280,6 +280,12 @@ static bool net_pending_publish(uintptr_t m)
         return false;
     write_bytes(GEMDRVEMUL_NET_PENDING, b, 2);
     shadow_mark(SHADOW_ROM3 + GEMDRVEMUL_NET_PENDING, 2);
+    // The /ROM4 copy at once: marking it would make the next sync compare all the
+    // blocks between it and /ROM3
+    uint8_t *rom4 = (uint8_t *)shadow_base() + GEMDRVEMUL_NET_PENDING_ROM4;
+    rom4[0] = b[1];                     // CPU order, like the rest of the shadow
+    rom4[1] = b[0];
+    shadow_write_range(GEMDRVEMUL_NET_PENDING_ROM4, 2);
     return true;
 }
 
@@ -731,6 +737,31 @@ void gemdrv_command(const hulk_packet_t *pkt)
             buf[2 * i + 1] = w[i] & 0xFF;
             chk += w[i];
         }
+        {   // Diagnostics: a block sent again (same handle and bytes still to write) is
+            // compared with the try before it, to see what the bus changed
+            static uint16_t prev[GEMDRVEMUL_WRITE_BUFF_SIZE / 2];
+            static uint16_t prev_handle = 0xFFFF;
+            static uint32_t prev_pending, resends, blocks;
+            blocks++;
+            if (payloadPtr[0] == prev_handle && pending == prev_pending) {
+                int diffs = 0;
+                char line[160];
+                size_t o = 0;
+                for (size_t i = 0; i < sizeof(buf) / 2; i++) {
+                    if (prev[i] == w[i])
+                        continue;
+                    if (diffs < 6 && o < sizeof(line) - 24)
+                        o += snprintf(line + o, sizeof(line) - o, " [%u] %04x>%04x", (unsigned)i, prev[i], w[i]);
+                    diffs++;
+                }
+                line[o] = 0;
+                ESP_LOGW(TAG, "write block sent again (%lu of %lu blocks), %d words differ:%s",
+                         (unsigned long)++resends, (unsigned long)blocks, diffs, line);
+            }
+            memcpy(prev, w, sizeof(prev));
+            prev_handle = payloadPtr[0];
+            prev_pending = pending;
+        }
         int32_t n = fs_fwrite(payloadPtr[0], buf, len);
         WRITE_AND_SWAP_LONGWORD(m, GEMDRVEMUL_WRITE_CHK, (uint32_t)chk);
         WRITE_AND_SWAP_LONGWORD(m, GEMDRVEMUL_WRITE_BYTES, (uint32_t)n);
@@ -785,7 +816,20 @@ void gemdrv_command(const hulk_packet_t *pkt)
         payload_field(w, d.mount_path, SETTINGS_MOUNT_LEN);
         w += SETTINGS_MOUNT_LEN / 2;
         payload_field(w, d.sd_path, SETTINGS_SD_PATH_LEN);
-        WRITE_AND_SWAP_LONGWORD(m, GEMDRVEMUL_CONFIG_DRV_STATUS, settings_set_drive(index, &d));
+        int r = settings_set_drive(index, &d);
+        WRITE_AND_SWAP_LONGWORD(m, GEMDRVEMUL_CONFIG_DRV_STATUS, r);
+        ESP_LOGI(TAG, "set drive %lu: state %u, %c:, type %u, \"%.24s\" host \"%.64s\" mount \"%.32s\" sd \"%.64s\": %d",
+                 (unsigned long)index, d.state, d.letter >= 'A' && d.letter <= 'Z' ? d.letter : '?', d.type,
+                 d.nickname, d.host, d.mount_path, d.sd_path, r);
+        break;
+    }
+    case GEMDRVEMUL_CONFIG_SD_FOLDER: {
+        // Create (word, 0 or 1), then the SD path as in SET_DRIVE
+        char path[SETTINGS_SD_PATH_LEN];
+        payload_field(payloadPtr + 1, path, SETTINGS_SD_PATH_LEN);
+        int r = fs_sd_folder(path, payloadPtr[0] != 0);
+        WRITE_AND_SWAP_LONGWORD(m, GEMDRVEMUL_CONFIG_DRV_STATUS, r);
+        ESP_LOGI(TAG, "SD folder \"%s\"%s: %d", path, payloadPtr[0] ? ", create" : "", r);
         break;
     }
     case GEMDRVEMUL_CONFIG_DELETE_DRIVE:

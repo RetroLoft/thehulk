@@ -79,6 +79,7 @@
  */
 
 #include <mint/osbind.h>
+#include <string.h>
 #include "sidetnfs_probe.h"
 
 #define ROM3_BASE            0xFB0000UL
@@ -98,6 +99,7 @@
 #define CMD_SAVE_RTC_CONFIG     0x0418UL
 #define CMD_REBOOT_PICO         0x041BUL /* Fase 9B: APP_GEMDRVEMUL<<8 | 0x1B, commands.h */
 #define CMD_CHECK_UPDATE        0x041CUL /* APP_GEMDRVEMUL<<8 | 0x1C, commands.h */
+#define CMD_SD_FOLDER           0x041DUL /* TheHulk: is a folder on the card, or create it */
 
 #define RANDOM_TOKEN_OFFSET      0x0000UL /* echoed token, polled after completion */
 #define RANDOM_TOKEN_SEED_OFFSET 0x0004UL /* Pico-published seed, read before sending */
@@ -246,6 +248,33 @@ static unsigned long rom3_read_long(unsigned long offset)
 /* TheHulk: one 16-bit word as two reads on even addresses, high byte first
  * (0xFB0000 + 2 * byte). A0 is never used: the Falcon drives /UDS and /LDS
  * low on every read of the cartridge port. Same as send_word in GEMDRIVE. */
+/* GEMDRIVE's busy flag (CODE_BUFFER_BUSY in gemdrive.s, in RAM): set while a command is
+ * being sent and answered. CART_NET.STX polls from STinG's interrupt and leaves the
+ * cartridge alone while it is set; one of its ROM3 reads in the middle of our command
+ * would otherwise become a byte of it (seen on the Falcon: an empty SD path). */
+#define SHARED_VAR_CODE_BUFFER 0x4228UL     /* GEMDRVEMUL_SHARED_VARIABLES + (16 + 20) * 4 */
+#define CODE_BUFFER_BUSY       94UL
+static unsigned long busy_code_buffer;
+static int busy_known, busy_value;
+
+static long busy_write(void)
+{
+    *(volatile unsigned char *)(busy_code_buffer + CODE_BUFFER_BUSY) = busy_value ? 0xFF : 0;
+    return 0;
+}
+
+static void busy_set(int on)
+{
+    if (!busy_known) {
+        busy_code_buffer = *((volatile unsigned long *)(ROM3_BASE + SHARED_VAR_CODE_BUFFER));
+        busy_known = 1;
+    }
+    if (busy_code_buffer) {
+        busy_value = on;
+        Supexec(busy_write);            /* GEMDRIVE's memory: under MiNT not ours to write */
+    }
+}
+
 static void send_word(unsigned long word)
 {
     (void)rom3_read(((word >> 8) & 0xFFUL) * 2UL);
@@ -266,6 +295,7 @@ static int wait_for_token(unsigned long seed, int timeout_sec)
         echoed = rom3_read_long(RANDOM_TOKEN_OFFSET);
         budget--;
     }
+    busy_set(0);
     return echoed == seed;
 }
 
@@ -276,8 +306,10 @@ static int wait_for_token(unsigned long seed, int timeout_sec)
  * wait_for_token(). total_payload_bytes excludes the token. */
 static unsigned long send_command_start(unsigned long command, unsigned long total_payload_bytes)
 {
-    unsigned long seed = rom3_read_long(RANDOM_TOKEN_SEED_OFFSET);
+    unsigned long seed;
 
+    busy_set(1);
+    seed = rom3_read_long(RANDOM_TOKEN_SEED_OFFSET);
     (void)rom3_read(ROM3_PROTOCOL_HEADER);
     send_word(command);
     send_word(total_payload_bytes + 4UL);
@@ -379,6 +411,24 @@ int sidetnfs_probe_set_drive(unsigned long index, const SideTnfsDriveInfo *in, u
     send_string_field(in->host,       SIDETNFS_HOST_LEN);
     send_string_field(in->mount_path, SIDETNFS_MOUNTPATH_LEN);
     send_string_field(in->sd_path,    SIDETNFS_SDPATH_LEN);
+
+    if (!wait_for_token(seed, PROBE_TIMEOUT_SEC))
+        return SIDETNFS_PROBE_TIMEOUT;
+
+    *out_status = rom3_read_long(DRIVE_STATUS_OFFSET);
+    return SIDETNFS_PROBE_OK;
+}
+
+int sidetnfs_probe_sd_folder(const char *sd_path, int create, unsigned long *out_status)
+{
+    char path[SIDETNFS_SDPATH_LEN];
+    unsigned long seed;
+
+    memset(path, 0, sizeof(path));
+    strncpy(path, sd_path, SIDETNFS_SDPATH_LEN - 1);
+    seed = send_command_start(CMD_SD_FOLDER, 2UL + SIDETNFS_SDPATH_LEN);
+    send_param16(create ? 1UL : 0UL);
+    send_string_field(path, SIDETNFS_SDPATH_LEN);
 
     if (!wait_for_token(seed, PROBE_TIMEOUT_SEC))
         return SIDETNFS_PROBE_TIMEOUT;
