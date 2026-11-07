@@ -9,13 +9,13 @@ built around an ESP32-S3 and a Lattice iCE40UP5K FPGA. Successor of SideTNFS.
 |---|---|
 | `hardware/v2/` | KiCad project and JLCPCB production files |
 | `fpga/` | FPGA gateware (Verilog), pin constraints, simulation |
-| `esp32/` | ESP32-S3 firmware (ESP-IDF); embeds the bitstream, GEMDRIVE and the files of S: |
+| `esp32/` | ESP32-S3 firmware (ESP-IDF); embeds the bitstream, GEMDRIVE and the built-in files of the flash drive |
 | `atari/gemdrive/` | GEMDRIVE: the cartridge code the Atari runs (68000 assembly) |
 | `atari/config/` | Configuration program for the Atari (GEM, C) |
 | `atari/sting/` | `CART_NET.STX`: STinG driver for TheHulk's network bridge (C) |
-| `atari/stingins/` | `STINGINS.TOS`: STinG installer on drive S:, see [docs/NETWORK.md](docs/NETWORK.md) |
+| `atari/stingins/` | `STINGINS.TOS`: STinG installer on the flash drive, see [docs/NETWORK.md](docs/NETWORK.md) |
 | `tools/` | Development helpers |
-| `docs/` | Documentation: [hardware](docs/hardware-v2.md), [internet with STinG](docs/NETWORK.md) |
+| `docs/` | Documentation: [hardware](docs/hardware-v2.md), [drives](docs/DRIVES.md), [internet with STinG](docs/NETWORK.md) |
 
 ## Building
 

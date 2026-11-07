@@ -2,6 +2,8 @@
 // gives the DOS date/time and the FAT attributes, which are the GEMDOS ones. The flash
 // drive is a fixed list of files in the firmware. The card and a TNFS drive show names that
 // GEMDOS can use: 8.3, shown in capitals.
+// The flash drive is a FAT volume too (flashfs.c, FatFs drive "1:"). Its root also shows the
+// files built into the firmware, read-only: they cannot be changed or removed there.
 #include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -10,6 +12,7 @@
 #include <time.h>
 #include "atari_charset.h"
 #include "ff.h"
+#include "flashfs.h"
 #include "gemdrv_fs.h"
 #include "gemdrv_layout.h"
 #include "sd.h"
@@ -37,7 +40,7 @@ static char s_cwds[FS_MAX_SLOTS][MAX_PATH];
 static int s_flash_slot = -1;
 static bool s_is_tnfs[FS_MAX_SLOTS];
 
-// The flash drive: one folder, read-only
+// The files built into the firmware, in the root of the flash drive
 extern const uint8_t thehulk_prg_start[] asm("_binary_THEHULK_PRG_start");
 extern const uint8_t thehulk_prg_end[]   asm("_binary_THEHULK_PRG_end");
 extern const uint8_t stingins_tos_start[] asm("_binary_STINGINS_TOS_start");
@@ -63,7 +66,7 @@ static void flash_files_init(void)
 typedef struct {
     bool used;
     FIL fil;
-    const flash_file_t *flash;      // on the flash drive: no FIL
+    const flash_file_t *flash;      // a built-in file: no FIL
     int tnfs_slot;                  // on a TNFS drive: no FIL (-1: not)
     uint8_t tnfs_handle;
     uint32_t size;
@@ -79,8 +82,11 @@ static file_t *s_files;             // handle = FIRST_FILE_DESCRIPTOR + index
 typedef struct {
     uint32_t dta;                   // 0: free
     bool open;                      // directory still open (not at its end)
-    bool flash;                     // on the flash drive: no FF_DIR
+    bool flash;                     // still listing the built-in files
+    bool flash_root;                // the root of the flash drive: built-in names win
     int flash_next;
+    bool dir_open;                  // FF_DIR open
+    bool on_card;
     int tnfs_slot;                  // on a TNFS drive: no FF_DIR (-1: not)
     uint8_t tnfs_handle;
     FF_DIR dir;
@@ -118,9 +124,22 @@ static bool card_there(void)
     return false;
 }
 
+// A folder on the card
 static bool slot_is_sd(int slot)
 {
     return slot >= 0 && slot < FS_MAX_SLOTS && !s_is_tnfs[slot] && slot != s_flash_slot && s_root[slot][0];
+}
+
+// FatFs: the card or the flash drive
+static bool slot_is_fat(int slot)
+{
+    return slot >= 0 && slot < FS_MAX_SLOTS && !s_is_tnfs[slot] && s_root[slot][0];
+}
+
+// The volume of a FatFs path ("0:/..." the card, "1:/..." the flash drive) can be used
+static bool fat_ready(const char *fat)
+{
+    return fat[0] == FLASHFS_DRIVE[0] ? flashfs_ready() : card_there();
 }
 
 void fs_set_tnfs_slot(int slot, const char *host, uint16_t port, const char *mount)
@@ -134,7 +153,11 @@ void fs_set_tnfs_slot(int slot, const char *host, uint16_t port, const char *mou
 
 void fs_set_flash_slot(int slot)
 {
+    if (slot < 0 || slot >= FS_MAX_SLOTS)
+        return;
     s_flash_slot = slot;
+    s_is_tnfs[slot] = false;
+    strcpy(s_root[slot], FLASHFS_DRIVE);
 }
 
 static void search_close(search_t *s)
@@ -143,8 +166,9 @@ static void search_close(search_t *s)
         return;
     if (s->tnfs_slot >= 0)
         tnfs_dir_close(s->tnfs_slot, s->tnfs_handle);
-    else if (!s->flash)
+    else if (s->dir_open)
         f_closedir(&s->dir);
+    s->dir_open = false;
     s->open = false;
 }
 
@@ -181,11 +205,11 @@ void fs_reset(void)
 void fs_sd_removed(void)
 {
     for (int i = 0; s_files && i < MAX_FILES; i++)
-        if (s_files[i].used && s_files[i].tnfs_slot < 0 && !s_files[i].flash)
+        if (s_files[i].used && s_files[i].tnfs_slot < 0 && !s_files[i].flash && s_files[i].path[0] != FLASHFS_DRIVE[0])
             s_files[i].used = false;
     for (int i = 0; i < MAX_SEARCH; i++)
-        if (s_search[i].open && s_search[i].tnfs_slot < 0 && !s_search[i].flash)
-            s_search[i].open = false;
+        if (s_search[i].open && s_search[i].on_card)
+            s_search[i].open = s_search[i].dir_open = false;
     for (int i = 0; i < FS_MAX_SLOTS; i++)
         if (slot_is_sd(i))
             s_cwds[i][0] = 0;
@@ -467,6 +491,29 @@ static void unix_to_dos(uint32_t t, uint16_t *date, uint16_t *tod)
     *tod = (tm.tm_hour << 11) | (tm.tm_min << 5) | (tm.tm_sec / 2);
 }
 
+static bool is_builtin_name(const char *name)
+{
+    for (size_t i = 0; i < sizeof(s_flash) / sizeof(s_flash[0]); i++)
+        if (!strcasecmp(name, s_flash[i].name))
+            return true;
+    return false;
+}
+
+// The built-in file a path names (in the root of the flash drive), or NULL
+static const flash_file_t *builtin(int slot, const char *apath)
+{
+    char fat[MAX_PATH];
+    if (slot != s_flash_slot || !to_fat(slot, apath, fat, sizeof(fat)))
+        return NULL;
+    size_t n = strlen(s_root[slot]);
+    if (strncmp(fat, s_root[slot], n) || fat[n] != '/' || strchr(fat + n + 1, '/'))
+        return NULL;
+    for (size_t i = 0; i < sizeof(s_flash) / sizeof(s_flash[0]); i++)
+        if (!strcasecmp(fat + n + 1, s_flash[i].name))
+            return &s_flash[i];
+    return NULL;
+}
+
 static int16_t next_match(search_t *s, uint8_t *dta_out)
 {
     FILINFO fno;
@@ -496,7 +543,8 @@ static int16_t next_match(search_t *s, uint8_t *dta_out)
     }
     while (s->open && s->flash) {
         if (s->flash_next >= (int)(sizeof(s_flash) / sizeof(s_flash[0]))) {
-            s->open = false;
+            s->flash = false;
+            s->open = s->dir_open;
             break;
         }
         const flash_file_t *f = &s_flash[s->flash_next++];
@@ -511,16 +559,18 @@ static int16_t next_match(search_t *s, uint8_t *dta_out)
             return GEMDOS_EOK;
         }
     }
-    while (s->open && !s->flash && s->tnfs_slot < 0) {
+    while (s->open && s->dir_open) {
         if (f_readdir(&s->dir, &fno) != FR_OK || !fno.fname[0]) {
             f_closedir(&s->dir);
-            s->open = false;
+            s->open = s->dir_open = false;
             break;
         }
         // FatFs reads the short names, in capitals. A long name shows as NAME~1.EXT: hidden.
         const char *tilde = strchr(fno.fname, '~');
         if (tilde && isdigit((unsigned char)tilde[1]))
             continue;
+        if (s->flash_root && is_builtin_name(fno.fname))
+            continue;                   // the built-in file goes first
         if (match(s, fno.fname) && attribs_ok(s->attribs, fno.fattrib)) {
             fill_dta(dta_out, &fno);
             return GEMDOS_EOK;
@@ -530,27 +580,6 @@ static int16_t next_match(search_t *s, uint8_t *dta_out)
     return GEMDOS_ENMFIL;
 }
 
-// The flash drive has one folder: true for "", "\\", "S:" and "S:\\"
-static bool flash_is_root(const char *apath)
-{
-    if (isalpha((unsigned char)apath[0]) && apath[1] == ':')
-        apath += 2;
-    return !apath[0] || (apath[0] == '\\' && !apath[1]) || !strcmp(apath, ".");
-}
-
-// The file name in a flash drive path, NULL when it is not in the root
-static const flash_file_t *flash_find(const char *apath)
-{
-    if (isalpha((unsigned char)apath[0]) && apath[1] == ':')
-        apath += 2;
-    if (*apath == '\\')
-        apath++;
-    for (size_t i = 0; i < sizeof(s_flash) / sizeof(s_flash[0]); i++)
-        if (!strcasecmp(apath, s_flash[i].name))
-            return &s_flash[i];
-    return NULL;
-}
-
 int16_t fs_fsfirst(int slot, uint32_t dta, const char *path, uint16_t attribs, uint8_t *dta_out)
 {
     status_led_activity();
@@ -558,17 +587,6 @@ int16_t fs_fsfirst(int slot, uint32_t dta, const char *path, uint16_t attribs, u
     const char *pattern;
     memset(dta_out, 0, FS_DTA_SIZE);
     split_pattern(path, adir, sizeof(adir), &pattern);
-    if (slot == s_flash_slot) {
-        if (!flash_is_root(adir))
-            return GEMDOS_EPTHNF;
-        search_t *s = new_search(dta);
-        s->attribs = attribs;
-        s->flash = true;
-        s->open = true;
-        make_pattern(pattern, s->name, s->ext);
-        int16_t r = next_match(s, dta_out);
-        return r == GEMDOS_ENMFIL ? GEMDOS_EFILNF : r;
-    }
     if (slot_is_tnfs(slot)) {
         uint8_t h;
         if (!to_tnfs(slot, adir[0] ? adir : ".", fat, sizeof(fat)))
@@ -585,15 +603,24 @@ int16_t fs_fsfirst(int slot, uint32_t dta, const char *path, uint16_t attribs, u
         int16_t found = next_match(s, dta_out);
         return found == GEMDOS_ENMFIL ? GEMDOS_EFILNF : found;
     }
-    if (!card_there() || !to_fat(slot, adir[0] ? adir : ".", fat, sizeof(fat)))
+    if (!to_fat(slot, adir[0] ? adir : ".", fat, sizeof(fat)))
+        return GEMDOS_EPTHNF;
+    bool flash_root = slot == s_flash_slot && !strcmp(fat, s_root[slot]);
+    bool ready = fat_ready(fat);
+    if (!ready && !flash_root)
         return GEMDOS_EPTHNF;
 
     search_t *s = new_search(dta);
     s->attribs = attribs;
+    s->flash = s->flash_root = flash_root;
+    s->on_card = slot != s_flash_slot;
     make_pattern(pattern, s->name, s->ext);
-    FRESULT fr = f_opendir(&s->dir, fat);
-    if (fr != FR_OK)
-        return fr == FR_NO_PATH || fr == FR_NO_FILE ? GEMDOS_EPTHNF : fresult_to_gemdos(fr);
+    if (ready) {
+        FRESULT fr = f_opendir(&s->dir, fat);
+        if (fr != FR_OK && !flash_root)
+            return fr == FR_NO_PATH || fr == FR_NO_FILE ? GEMDOS_EPTHNF : fresult_to_gemdos(fr);
+        s->dir_open = fr == FR_OK;
+    }
     s->open = true;
     int16_t r = next_match(s, dta_out);
     return r == GEMDOS_ENMFIL ? GEMDOS_EFILNF : r;
@@ -684,7 +711,7 @@ static void sd_close_path(const char *fat)
 // A file on the card: FatFs mode, FA_READ alone leaves other handles on the file alone
 static int32_t sd_open_file(const char *fat, BYTE fa_mode)
 {
-    if (!card_there() || !s_files)
+    if (!fat_ready(fat) || !s_files)
         return GEMDOS_EFILNF;
     for (int i = 0; i < MAX_FILES; i++) {
         if (s_files[i].used)
@@ -726,11 +753,11 @@ int32_t fs_fopen(int slot, const char *path, uint16_t mode)
 {
     status_led_activity();
     char fat[MAX_PATH];
-    if ((mode & 3) != 0 && !slot_is_tnfs(slot) && !slot_is_sd(slot))
-        return GEMDOS_EACCDN;           // the flash drive is read-only
-    if (slot == s_flash_slot) {
-        const flash_file_t *ff = flash_find(path);
-        if (!ff || !s_files)
+    const flash_file_t *ff = builtin(slot, path);
+    if ((mode & 3) != 0 && (ff || (!slot_is_tnfs(slot) && !slot_is_fat(slot))))
+        return GEMDOS_EACCDN;           // the built-in files are read-only
+    if (ff) {
+        if (!s_files)
             return GEMDOS_EFILNF;
         for (int i = 0; i < MAX_FILES; i++) {
             if (s_files[i].used)
@@ -762,7 +789,7 @@ int32_t fs_fcreate(int slot, const char *path, uint16_t attr)
 {
     status_led_activity();
     char fat[MAX_PATH];
-    if (!slot_is_tnfs(slot) && !slot_is_sd(slot))
+    if ((!slot_is_tnfs(slot) && !slot_is_fat(slot)) || builtin(slot, path))
         return GEMDOS_EACCDN;
     if (slot_is_tnfs(slot))
         return to_tnfs(slot, path, fat, sizeof(fat))
@@ -832,13 +859,13 @@ int16_t fs_fdelete(int slot, const char *path)
 {
     status_led_activity();
     char fat[MAX_PATH];
-    if (!slot_is_tnfs(slot) && !slot_is_sd(slot))
+    if ((!slot_is_tnfs(slot) && !slot_is_fat(slot)) || builtin(slot, path))
         return GEMDOS_EACCDN;
     if (slot_is_tnfs(slot))
         return to_tnfs(slot, path, fat, sizeof(fat)) ? tnfs_unlink(slot, fat) : GEMDOS_EFILNF;
     if (!to_fat(slot, path, fat, sizeof(fat)))
         return GEMDOS_EFILNF;
-    if (!card_there())
+    if (!fat_ready(fat))
         return GEMDOS_EFILNF;
     FILINFO fno;
     FRESULT fr = f_stat(fat, &fno);
@@ -855,20 +882,20 @@ int16_t fs_dcreate(int slot, const char *path)
 {
     status_led_activity();
     char fat[MAX_PATH];
-    if (!slot_is_tnfs(slot) && !slot_is_sd(slot))
+    if ((!slot_is_tnfs(slot) && !slot_is_fat(slot)) || builtin(slot, path))
         return GEMDOS_EACCDN;
     if (slot_is_tnfs(slot))
         return to_tnfs(slot, path, fat, sizeof(fat)) ? tnfs_mkdir(slot, fat) : GEMDOS_EPTHNF;
     if (!to_fat(slot, path, fat, sizeof(fat)))
         return GEMDOS_EPTHNF;
-    return card_there() ? fresult_to_gemdos(f_mkdir(fat)) : GEMDOS_EPTHNF;
+    return fat_ready(fat) ? fresult_to_gemdos(f_mkdir(fat)) : GEMDOS_EPTHNF;
 }
 
 int16_t fs_ddelete(int slot, const char *path)
 {
     status_led_activity();
     char fat[MAX_PATH];
-    if (!slot_is_tnfs(slot) && !slot_is_sd(slot))
+    if (!slot_is_tnfs(slot) && !slot_is_fat(slot))
         return GEMDOS_EACCDN;
     if (slot_is_tnfs(slot)) {
         if (!to_tnfs(slot, path, fat, sizeof(fat)))
@@ -878,7 +905,7 @@ int16_t fs_ddelete(int slot, const char *path)
     }
     if (!to_fat(slot, path, fat, sizeof(fat)))
         return GEMDOS_EPTHNF;
-    if (!card_there())
+    if (!fat_ready(fat))
         return GEMDOS_EPTHNF;
     if (!strcmp(fat, s_root[slot]))
         return GEMDOS_EACCDN;
@@ -895,7 +922,7 @@ int32_t fs_frename(int slot, int slot_to, const char *from, const char *to)
 {
     status_led_activity();
     char a[MAX_PATH], b[MAX_PATH];
-    if (!slot_is_tnfs(slot) && !slot_is_sd(slot))
+    if ((!slot_is_tnfs(slot) && !slot_is_fat(slot)) || builtin(slot, from) || builtin(slot_to, to))
         return GEMDOS_EACCDN;
     if (slot != slot_to)
         return GEMDOS_ENSAME;
@@ -904,7 +931,7 @@ int32_t fs_frename(int slot, int slot_to, const char *from, const char *to)
                    ? tnfs_rename(slot, a, b) : GEMDOS_EFILNF;
     if (!to_fat(slot, from, a, sizeof(a)) || !to_fat(slot, to, b, sizeof(b)))
         return GEMDOS_EFILNF;
-    if (!card_there())
+    if (!fat_ready(a))
         return GEMDOS_EFILNF;
     size_t len = strlen(a);
     if (!strcmp(a, s_root[slot]) || (!strncasecmp(a, b, len) && b[len] == '/'))
@@ -918,10 +945,11 @@ uint32_t fs_free_clusters(int slot)
     int64_t kb = 0;                     // a cluster is 1 KB, see the Dfree command
     if (slot_is_tnfs(slot)) {
         kb = tnfs_free_kb(slot);
-    } else if (slot_is_sd(slot) && card_there()) {
+    } else if (slot_is_fat(slot) && fat_ready(s_root[slot])) {
         DWORD clusters;
         FATFS *fs;
-        if (f_getfree("0:", &clusters, &fs) == FR_OK)
+        char drv[3] = { s_root[slot][0], ':', 0 };
+        if (f_getfree(drv, &clusters, &fs) == FR_OK)
             kb = (int64_t)clusters * fs->csize * fs->ssize / 1024;
     }
     return kb < 0 ? 0 : kb > MAX_FREE_KB ? MAX_FREE_KB : kb;
@@ -1025,21 +1053,18 @@ int32_t fs_fattrib(int slot, const char *path, uint16_t flag, uint16_t attr)
     char fat[MAX_PATH];
     if (flag && slot_is_tnfs(slot))
         return attr;                    // TNFS has no attributes: accepted
-    if (flag && !slot_is_sd(slot))
+    if (flag && (!slot_is_fat(slot) || builtin(slot, path)))
         return GEMDOS_EACCDN;
     if (flag) {
-        if (!card_there() || !to_fat(slot, path, fat, sizeof(fat)))
+        if (!to_fat(slot, path, fat, sizeof(fat)) || !fat_ready(fat))
             return GEMDOS_EFILNF;
         if (!strcmp(fat, s_root[slot]))
             return GEMDOS_EACCDN;
         FRESULT fr = f_chmod(fat, attr & SD_ATTR_MASK, SD_ATTR_MASK);
         return fr == FR_OK ? attr : fresult_to_gemdos(fr);
     }
-    if (slot == s_flash_slot) {
-        if (flash_is_root(path))
-            return FA_ST_DIR;
-        return flash_find(path) ? AM_RDO : GEMDOS_EFILNF;
-    }
+    if (builtin(slot, path))
+        return AM_RDO;
     if (slot_is_tnfs(slot)) {
         uint32_t size, mtime;
         bool is_dir;
@@ -1050,10 +1075,12 @@ int32_t fs_fattrib(int slot, const char *path, uint16_t flag, uint16_t attr)
             return r == GEMDOS_EPTHNF ? GEMDOS_EFILNF : r;
         return is_dir ? FA_ST_DIR : 0;
     }
-    if (!card_there() || !to_fat(slot, path, fat, sizeof(fat)))
+    if (!to_fat(slot, path, fat, sizeof(fat)))
         return GEMDOS_EFILNF;
     if (!strcmp(fat, s_root[slot]))
         return FA_ST_DIR;
+    if (!fat_ready(fat))
+        return GEMDOS_EFILNF;
     FILINFO fno;
     FRESULT fr = f_stat(fat, &fno);
     return fr == FR_OK ? fno.fattrib : fresult_to_gemdos(fr);
@@ -1064,8 +1091,6 @@ int32_t fs_fattrib(int slot, const char *path, uint16_t flag, uint16_t attr)
 int16_t fs_dsetpath(int slot, const char *path)
 {
     char fat[MAX_PATH];
-    if (slot == s_flash_slot)
-        return flash_is_root(path) ? GEMDOS_EOK : GEMDOS_EPTHNF;
     if (slot_is_tnfs(slot)) {
         uint32_t size, mtime;
         bool is_dir = false;
@@ -1079,9 +1104,11 @@ int16_t fs_dsetpath(int slot, const char *path)
             return GEMDOS_EPTHNF;
         if (!strcmp(fat, "/"))
             fat[0] = 0;
-    } else if (!card_there() || !to_fat(slot, path, fat, sizeof(fat))) {
+    } else if (!to_fat(slot, path, fat, sizeof(fat))) {
         return GEMDOS_EPTHNF;
     } else if (strcmp(fat, s_root[slot])) {
+        if (!fat_ready(fat))
+            return GEMDOS_EPTHNF;
         FILINFO fno;
         if (f_stat(fat, &fno) != FR_OK || !(fno.fattrib & AM_DIR))
             return GEMDOS_EPTHNF;
@@ -1097,5 +1124,5 @@ int16_t fs_dsetpath(int slot, const char *path)
 
 const char *fs_dgetpath(int slot)
 {
-    return slot == s_flash_slot || slot < 0 || slot >= FS_MAX_SLOTS ? "" : s_cwds[slot];
+    return slot < 0 || slot >= FS_MAX_SLOTS ? "" : s_cwds[slot];
 }

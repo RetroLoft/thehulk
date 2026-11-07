@@ -32,7 +32,7 @@ static void load_defaults(void)
 {
     memset(&s_cfg, 0, sizeof(s_cfg));
     s_cfg.version = BLOB_VERSION;
-    s_cfg.flash_letter = 'S';
+    s_cfg.flash_letter = 'I';
     settings_drive_t *d = &s_cfg.drives[0];
     d->state = SETTINGS_DRIVE_ENABLED;
     d->letter = 'N';

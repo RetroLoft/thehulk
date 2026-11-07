@@ -11,13 +11,14 @@ program (PING, URLVIEW, HighWire, gapFTP, ...)
   -> cartridge port -> ESP32 -> Wi-Fi -> your router -> internet
 ```
 
-The drives keep working at the same time: the SD card, the TNFS drives and S:. There is no
+The drives keep working at the same time: the SD card, the TNFS drives and the flash drive. There is no
 separate network mode.
 
 ## 1. What you need
 
-- Wi-Fi set up on TheHulk (`S:\THEHULK.PRG`).
-- `STINGINS.TOS` on drive **S:** (TheHulk's flash drive). It carries everything else:
+- Wi-Fi set up on TheHulk (`THEHULK.PRG` on the flash drive, `I:` by default, see
+  [DRIVES.md](DRIVES.md)).
+- `STINGINS.TOS` on the flash drive, next to `THEHULK.PRG`. It carries everything else:
   STinG 1.26 (Peter Rottengatter and Ronald Andersson, freeware), `TCP.STX` 1.41 by
   Christian Zietz ([chzsoft/sting](https://github.com/chzsoft/sting)), `UDP.STX`,
   `RESOLVE.STX`, `PING.PRG` and TheHulk's own `CART_NET.STX`.
@@ -47,7 +48,7 @@ Most home networks use mask `255.255.255.0`: all devices share the first three n
 
 ## 3. Install STinG
 
-Start `S:\STINGINS.TOS`. It shows TheHulk's own Wi-Fi address and asks:
+Start `STINGINS.TOS` from the flash drive (`I:\STINGINS.TOS` by default). It shows TheHulk's own Wi-Fi address and asks:
 
 | Question | Default |
 |---|---|

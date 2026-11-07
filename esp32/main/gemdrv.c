@@ -553,7 +553,8 @@ void gemdrv_command(const hulk_packet_t *pkt)
         int16_t r = fs_fsfirst(payloadPtr[3], dta, path, payloadPtr[2], dta_out);
         write_bytes(GEMDRVEMUL_DTA_TRANSFER, dta_out, FS_DTA_SIZE);
         WRITE_WORD(m, GEMDRVEMUL_DTA_F_FOUND, (uint16_t)r);
-        ESP_LOGI(TAG, "Fsfirst \"%s\" (DTA %06lx): %d", path, (unsigned long)dta, r);
+        ESP_LOGI(TAG, "Fsfirst \"%s\" (slot %u, attr %02x, DTA %06lx): %d", path, payloadPtr[3],
+                 payloadPtr[2], (unsigned long)dta, r);
         break;
     }
     case GEMDRVEMUL_FSNEXT_CALL: {
@@ -626,6 +627,7 @@ void gemdrv_command(const hulk_packet_t *pkt)
         payload_string(pkt, path, sizeof(path));
         int32_t r = fs_fattrib(payloadPtr[4], path, payloadPtr[0], payloadPtr[2]);
         WRITE_AND_SWAP_LONGWORD(m, GEMDRVEMUL_FATTRIB_STATUS, (uint32_t)r);
+        ESP_LOGI(TAG, "Fattrib \"%s\" (slot %u, flag %u): %ld", path, payloadPtr[4], payloadPtr[0], (long)r);
         break;
     }
     case GEMDRVEMUL_SAVE_BASEPAGE:
@@ -660,7 +662,7 @@ void gemdrv_command(const hulk_packet_t *pkt)
         payload_string(pkt, path, sizeof(path));
         int16_t r = fs_dsetpath(payloadPtr[0], path);
         WRITE_WORD(m, GEMDRVEMUL_SET_DPATH_STATUS, (uint16_t)r);
-        ESP_LOGI(TAG, "Dsetpath \"%s\": %d", path, r);
+        ESP_LOGI(TAG, "Dsetpath \"%s\" (slot %u): %d", path, payloadPtr[0], r);
         break;
     }
     case GEMDRVEMUL_DFREE_CALL:
@@ -695,7 +697,9 @@ void gemdrv_command(const hulk_packet_t *pkt)
     case GEMDRVEMUL_DCREATE_CALL: {
         char path[256];
         payload_string(pkt, path, sizeof(path));
-        WRITE_WORD(m, GEMDRVEMUL_DCREATE_STATUS, (uint16_t)fs_dcreate(payloadPtr[0], path));
+        int16_t r = fs_dcreate(payloadPtr[0], path);
+        WRITE_WORD(m, GEMDRVEMUL_DCREATE_STATUS, (uint16_t)r);
+        ESP_LOGI(TAG, "Dcreate \"%s\" (slot %u): %d", path, payloadPtr[0], r);
         break;
     }
     case GEMDRVEMUL_DDELETE_CALL: {

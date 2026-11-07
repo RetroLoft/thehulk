@@ -1,7 +1,8 @@
 // GEMDRIVE storage: the GEMDOS calls for the cartridge drives, by drive slot. A slot is a
-// folder on the microSD card, a TNFS share, or the flash drive with the configuration program.
-// The flash drive is read-only: everything that would change it returns EACCDN. The card
-// and a TNFS drive can be written.
+// folder on the microSD card, a TNFS share, or the flash drive (a FAT volume in the ESP32's
+// flash, see flashfs.h). All three can be written, except the files built into the firmware
+// (the configuration program, the STinG installer): they show in the root of the flash drive
+// and are read-only.
 // Paths are Atari paths ("C:\DIR\FILE.PRG", or relative to the current folder);
 // results are GEMDOS error codes (negative) or values.
 #pragma once
