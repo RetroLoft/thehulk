@@ -4,6 +4,7 @@
 #pragma once
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 #define SETTINGS_MAX_DRIVES   8
@@ -31,6 +32,7 @@
 #define SETTINGS_INVALID_SD_PATH        10
 #define SETTINGS_WRITE_FAILED           12
 #define SETTINGS_INVALID_DRIVE_STATE    15
+#define SETTINGS_INVALID_NAME           16  // TheHulk: the device name (web page only)
 
 #define SETTINGS_NET_OK               0
 #define SETTINGS_NET_INVALID_SSID     1
@@ -95,3 +97,19 @@ int settings_rtc_save(void);
 // cartridge at all. Switched on, it is there again from the next reset. Kept in NVS.
 bool settings_cart_off(void);
 bool settings_set_cart_off(bool off);
+
+// Setup mode (AP mode) on at the next start too, until it is switched off or the network
+// settings are saved (settings_net_save clears it). Kept in NVS.
+bool settings_ap_on(void);
+bool settings_set_ap_on(bool on);
+
+// The device name ("Hulk Falcon"), to tell several cartridges apart: in the web page, as
+// the host name (settings_hostname: "hulk-falcon") and as the network name in setup mode
+#define SETTINGS_NAME_LEN 33
+const char *settings_device_name(void);
+int settings_set_device_name(const char *name);
+void settings_hostname(char *out, size_t size);
+
+// Before changing several settings: settings_restore() puts them back (not saved yet)
+void settings_snapshot(void);
+void settings_restore(void);

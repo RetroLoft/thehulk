@@ -230,7 +230,10 @@ int settings_net_save(void)
         return SETTINGS_NET_NOT_STAGED;
     s_cfg.net = s_net_staged;
     s_net_is_staged = false;
-    return write_blob() ? SETTINGS_NET_OK : SETTINGS_NET_WRITE_FAILED;
+    if (!write_blob())
+        return SETTINGS_NET_WRITE_FAILED;
+    settings_set_ap_on(false);          // new network settings: try them at the next start
+    return SETTINGS_NET_OK;
 }
 
 // --- Clock --------------------------------------------------------------------------
@@ -310,4 +313,112 @@ bool settings_set_cart_off(bool off)
     if (ok)
         s_cart_off = off;
     return ok;
+}
+
+// Setup mode remembered over a restart (the Atari powers TheHulk), until it is switched
+// off or the network settings change
+#define NVS_KEY_AP_ON "ap_on"
+
+bool settings_ap_on(void)
+{
+    nvs_handle_t h;
+    uint8_t on = 0;
+    if (nvs_open(NVS_NS, NVS_READONLY, &h) == ESP_OK) {
+        nvs_get_u8(h, NVS_KEY_AP_ON, &on);
+        nvs_close(h);
+    }
+    return on != 0;
+}
+
+bool settings_set_ap_on(bool on)
+{
+    if (settings_ap_on() == on)
+        return true;                    // no flash writes for nothing
+    nvs_handle_t h;
+    if (nvs_open(NVS_NS, NVS_READWRITE, &h) != ESP_OK)
+        return false;
+    bool ok = nvs_set_u8(h, NVS_KEY_AP_ON, on) == ESP_OK && nvs_commit(h) == ESP_OK;
+    nvs_close(h);
+    return ok;
+}
+
+// The device name, also separate from the blob (its layout stays as the configuration
+// program knows it). Free text; the host name is made from it.
+#define NVS_KEY_NAME "devname"
+
+static char s_name[SETTINGS_NAME_LEN];
+
+const char *settings_device_name(void)
+{
+    if (!s_name[0]) {
+        nvs_handle_t h;
+        size_t len = sizeof(s_name);
+        if (nvs_open(NVS_NS, NVS_READONLY, &h) != ESP_OK ||
+            nvs_get_str(h, NVS_KEY_NAME, s_name, &len) != ESP_OK || !s_name[0])
+            strcpy(s_name, "TheHulk");
+        if (h)
+            nvs_close(h);
+    }
+    return s_name;
+}
+
+int settings_set_device_name(const char *name)
+{
+    char n[SETTINGS_NAME_LEN];
+    size_t len = 0;
+    while (*name == ' ')
+        name++;
+    for (; *name && len + 1 < sizeof(n); name++)
+        if ((unsigned char)*name >= ' ')
+            n[len++] = *name;
+    while (len && n[len - 1] == ' ')
+        len--;
+    n[len] = 0;
+    if (!len)
+        return SETTINGS_INVALID_NAME;
+    nvs_handle_t h;
+    if (nvs_open(NVS_NS, NVS_READWRITE, &h) != ESP_OK)
+        return SETTINGS_WRITE_FAILED;
+    bool ok = nvs_set_str(h, NVS_KEY_NAME, n) == ESP_OK && nvs_commit(h) == ESP_OK;
+    nvs_close(h);
+    if (!ok)
+        return SETTINGS_WRITE_FAILED;
+    strcpy(s_name, n);
+    return SETTINGS_OK;
+}
+
+void settings_hostname(char *out, size_t size)
+{
+    // "Hulk Falcon" -> "hulk-falcon": letters, digits and single hyphens, at most 32
+    const char *n = settings_device_name();
+    size_t len = 0;
+    bool dash = false;
+    for (; *n && len + 1 < size && len < 32; n++) {
+        char c = (char)tolower((unsigned char)*n);
+        if ((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')) {
+            if (dash && len)
+                out[len++] = '-';
+            dash = false;
+            if (len + 1 < size)
+                out[len++] = c;
+        } else {
+            dash = true;
+        }
+    }
+    out[len] = 0;
+    if (!len)
+        snprintf(out, size, "thehulk");
+}
+
+// The web page changes everything at once: on an error the settings go back as they were
+static blob_t s_snapshot;
+
+void settings_snapshot(void)
+{
+    s_snapshot = s_cfg;
+}
+
+void settings_restore(void)
+{
+    s_cfg = s_snapshot;
 }

@@ -70,13 +70,15 @@ It writes:
 Restart. At start-up you should see
 
 ```text
-CART_NET.STX 00.01: port TheHulk installed
+CART_NET.STX 00.03: port TheHulk installed
 CART_NET.STX: IP 192.168.178.50, mask 255.255.255.0, port active
 ```
 
 When the port is active, TheHulk switches its bridge on (serial console `w`: *bridge on*).
 If the Atari starts at the same moment as TheHulk, `CART_NET.STX` first waits up to 30
-seconds for TheHulk's Wi-Fi (Esc skips that).
+seconds for TheHulk's Wi-Fi (Esc skips that). In AP mode without a connection it does not
+wait and is not installed (see [WEB.md](WEB.md)). After a firmware update, start
+`STINGINS.TOS` again to get the newest `CART_NET.STX`.
 
 **Again, to change the settings:** start `STINGINS.TOS` once more. It finds the
 installation through `AUTO\STING.INF` and offers *1 = change the network settings only*
@@ -159,7 +161,8 @@ STinG takes the first line that matches, so the general line comes last.
 |---|---|
 | *no TheHulk cartridge found* at start-up | Cartridge switched off (button 1 or console), or not seated well |
 | *firmware without network function* | Firmware too old |
-| *cannot pass frames (no Wi-Fi?)* | Wi-Fi not set up or not connected: `THEHULK.PRG` |
+| *cannot pass frames (no Wi-Fi?)* | Wi-Fi not set up or not connected: `THEHULK.PRG` or the [web page](WEB.md) |
+| *TheHulk is in AP mode (no Wi-Fi), not installed* | AP mode without a connection to your Wi-Fi: switch it off, see [WEB.md](WEB.md) |
 | No line *IP ..., port active* at start-up | `CART_IP` missing in `DEFAULT.CFG` (start `STINGINS.TOS`), or LF line ends |
 | *port NOT active (TheHulk refused)* | IP address equal to the ESP32's, or not a valid address/mask |
 | Ping to the router fails | `ROUTE.TAB`, port active, console `w` (frames counted?) |

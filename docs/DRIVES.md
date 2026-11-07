@@ -8,8 +8,8 @@ GEMDRIVE, the program in the cartridge, gives the Atari up to nine drives:
 | **SD card** | a folder on the microSD card (FAT, 8.3 names) | yes |
 | **TNFS** | a share on a TNFS server in your network | yes |
 
-You set them up with `THEHULK.PRG` on the flash drive. The changes take effect after a
-reset of the Atari.
+You set them up with `THEHULK.PRG` on the flash drive, or on the web page (see
+[WEB.md](WEB.md)). The changes take effect after a reset of the Atari.
 
 ## The flash drive
 
@@ -45,3 +45,23 @@ On an ST without hard disk you can give the flash drive the letter `C:`: the Ata
 starts from it, with its AUTO folder and the desktop saved there (tested on a Falcon).
 With a hard disk, the flash drive at `C:` takes the place of the hard disk's `C:`, which
 can then not be reached.
+
+## A network drive that cannot be reached
+
+A TNFS drive stays on the desktop when its server cannot be reached. Its root then shows
+only one read-only text file with the reason, as ACSI2TNFS and SideTNFS do. Open it with
+*Show* on the desktop.
+
+- **`NET_WAIT.TXT`**: TheHulk is still connecting to Wi-Fi. Close the window and open the
+  drive again in a moment.
+- **`NET_ERR.TXT`**: the drive is not available. The file names the server and the folder,
+  with one of these reasons:
+  - TheHulk is in AP mode (see [WEB.md](WEB.md));
+  - no Wi-Fi network is set;
+  - no connection with the Wi-Fi network;
+  - the server name was not found;
+  - the server refused the mount (with the TNFS error);
+  - the server does not answer.
+
+TheHulk tries the server again at most every 5 seconds. Once it answers, opening the drive
+again shows its files.

@@ -30,8 +30,8 @@ typedef BASEPAGE BASPAG;                    /* Pure C name used by the headers *
 
 #define DRIVER_NAME   "CART_NET.STX"
 #define PORT_NAME     "TheHulk"
-#define VERSION     "00.02"
-#define MOD_DATE      (((2026 - 1980) << 9) | (11 << 5) | 5)
+#define VERSION     "00.03"
+#define MOD_DATE      (((2026 - 1980) << 9) | (11 << 5) | 7)
 
 #define MAX_FRAMES_PER_POLL 16              /* receive: frames per STinG call */
 #define MAX_SENDS_PER_POLL  4               /* send: datagrams per STinG call */
@@ -502,6 +502,8 @@ void _init(BASEPAGE *bp)
         quit("no TheHulk cartridge found, not installed\n");
     if (cmd(NET_INFO, 0) != ST_OK || !same(txbuf, "ATN", 3))
         quit("TheHulk firmware without network function, not installed\n");
+    if (get16(txbuf + 6) & 0x0004)
+        quit("TheHulk is in AP mode (no Wi-Fi), not installed\n");
     if (!(get16(txbuf + 6) & 0x0002)) {
         /* TheHulk may still be joining Wi-Fi after power-on. 30 s, counted down. */
         uint32 t0 = (uint32)Supexec(sv_hz);

@@ -12,13 +12,16 @@
 #include "netbridge.h"
 #include "settings.h"
 #include "status_led.h"
+#include "wifi.h"
 
 static const char *TAG = "console";
 
 #define POLL_MS     20
 #define DEBOUNCE    3           // polls the button must agree
+#define SHORT_MS    1500        // shorter: cartridge on/off
+#define LONG_MS     10000       // held this long: setup mode on (or off)
 
-static void set_cart_off(bool off)
+void console_set_cart_off(bool off)
 {
     if (!settings_set_cart_off(off)) {
         ESP_LOGE(TAG, "could not save the setting");
@@ -34,16 +37,22 @@ static void command(char c)
 {
     switch (c) {
     case 'd':
-        set_cart_off(true);
+        console_set_cart_off(true);
         break;
     case 'e':
-        set_cart_off(false);
+        console_set_cart_off(false);
         break;
     case 's':
         ESP_LOGI(TAG, "cartridge %s", settings_cart_off() ? "off" : "on");
         break;
     case 'w':
         net_bridge_status();
+        break;
+    case 'a':
+        if (wifi_setup_active())
+            wifi_setup_stop();
+        else
+            wifi_setup_start();
         break;
     case 't':                           // diagnostics: the ESP32 plays an Atari on .211
         s_test = !s_test;
@@ -53,8 +62,8 @@ static void command(char c)
     case '\n':
         break;
     default:
-        ESP_LOGI(TAG, "keys: d = cartridge off, e = cartridge on, s = status, w = network. "
-                 "Button 1 switches.");
+        ESP_LOGI(TAG, "keys: d = cartridge off, e = cartridge on, s = status, w = network, "
+                 "a = setup mode on/off. Button 1: short = cartridge on/off, 10 s = setup mode.");
         break;
     }
 }
@@ -72,8 +81,9 @@ static void console_task(void *arg)
     gpio_config(&btn);
     status_led_cart_off(settings_cart_off());
 
-    bool pressed = false;
+    bool pressed = false, long_done = false;
     int same = 0;
+    TickType_t down = 0;
     for (;;) {
         char c;
         if (uart && uart_read_bytes(CONFIG_ESP_CONSOLE_UART_NUM, &c, 1, 0) == 1)
@@ -85,8 +95,19 @@ static void console_task(void *arg)
         if (same >= DEBOUNCE) {
             same = 0;
             pressed = now;
-            if (pressed)
-                set_cart_off(!settings_cart_off());
+            if (pressed) {
+                down = xTaskGetTickCount();
+                long_done = false;
+            } else if (!long_done && xTaskGetTickCount() - down < pdMS_TO_TICKS(SHORT_MS)) {
+                console_set_cart_off(!settings_cart_off());     // a short press, on release
+            }
+        }
+        if (pressed && !long_done && xTaskGetTickCount() - down >= pdMS_TO_TICKS(LONG_MS)) {
+            long_done = true;           // held 10 s: setup mode, at once (the LED shows it)
+            if (wifi_setup_active())
+                wifi_setup_stop();
+            else
+                wifi_setup_start();
         }
         net_bridge_test_poll();
         vTaskDelay(pdMS_TO_TICKS(POLL_MS));

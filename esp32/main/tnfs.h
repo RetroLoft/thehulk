@@ -3,6 +3,7 @@
 #pragma once
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 #define TNFS_MAX_SLOTS 9
@@ -15,6 +16,19 @@ typedef struct {
 } tnfs_entry_t;
 
 void tnfs_set_slot(int slot, const char *host, uint16_t port, const char *mount);
+
+typedef enum {
+    TNFS_NO_ANSWER,
+    TNFS_NO_WIFI,
+    TNFS_NO_HOST,
+    TNFS_REFUSED,
+} tnfs_problem_t;
+
+// Mounted, or mounts now (after a failure not again for a few seconds)
+bool tnfs_ready(int slot);
+// Why the drive is not available, for the Atari: CR LF lines, length. *waiting: Wi-Fi still
+// connects (NET_WAIT.TXT instead of NET_ERR.TXT)
+size_t tnfs_problem_text(int slot, char *out, size_t size, bool *waiting);
 
 int tnfs_stat(int slot, const char *path, uint32_t *size, uint32_t *mtime, bool *is_dir);
 

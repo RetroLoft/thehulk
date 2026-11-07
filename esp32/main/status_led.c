@@ -13,13 +13,13 @@
 #define ERROR_MS     2000
 #define CARD_MS      300
 
-typedef enum { LED_OFF, LED_BLUE, LED_GREEN, LED_RED, LED_PURPLE, LED_YELLOW } led_color_t;
+typedef enum { LED_OFF, LED_BLUE, LED_GREEN, LED_RED, LED_PURPLE, LED_YELLOW, LED_WHITE } led_color_t;
 
 static rmt_channel_handle_t s_chan;
 static rmt_encoder_handle_t s_enc;
 static volatile bool s_fatal;
 static volatile TickType_t s_activity, s_error, s_card;
-static volatile bool s_activity_seen, s_error_seen, s_card_seen, s_cart_off;
+static volatile bool s_activity_seen, s_error_seen, s_card_seen, s_cart_off, s_setup;
 
 static void show(led_color_t color)
 {
@@ -29,32 +29,47 @@ static void show(led_color_t color)
         [LED_GREEN]  = { 24,  0,  0 },
         [LED_RED]    = {  0, 32,  0 },
         [LED_PURPLE] = {  0, 16, 16 },
-        [LED_YELLOW] = { 12, 16,  0 },
+        [LED_YELLOW] = {  8, 32,  0 },     // more red than green: not like white
+        [LED_WHITE]  = { 12, 12, 12 },
     };
     rmt_transmit_config_t tx = { .loop_count = 0 };
     rmt_transmit(s_chan, s_enc, grb[color], sizeof(grb[color]), &tx);
     rmt_tx_wait_all_done(s_chan, 10);
 }
 
-// Red: an error. Green: the drive at work. Purple: a card was mounted. Yellow: the
-// cartridge is switched off. Blue, blinking: no Wi-Fi (yet). Otherwise off.
+// Short events go first: red an error (2 s), green the drive at work, purple a card was
+// mounted. Then the states: white setup mode (AP mode), yellow the cartridge switched off,
+// blue no Wi-Fi (yet). One state alone: white and blue blink, yellow stays on. Two or three
+// states: their colours in turn, half a second each (white-blue, white-yellow, ...).
+// Nothing: off.
 static void led_task(void *arg)
 {
     led_color_t shown = LED_OFF;
     show(shown);
     for (;;) {
         TickType_t now = xTaskGetTickCount();
+        uint32_t step = pdTICKS_TO_MS(now) / BLINK_MS;
         led_color_t color = LED_OFF;
-        if (s_fatal || (s_error_seen && now - s_error < pdMS_TO_TICKS(ERROR_MS)))
+        if (s_fatal || (s_error_seen && now - s_error < pdMS_TO_TICKS(ERROR_MS))) {
             color = LED_RED;
-        else if (s_activity_seen && now - s_activity < pdMS_TO_TICKS(ACTIVITY_MS))
+        } else if (s_activity_seen && now - s_activity < pdMS_TO_TICKS(ACTIVITY_MS)) {
             color = LED_GREEN;
-        else if (s_card_seen && now - s_card < pdMS_TO_TICKS(CARD_MS))
+        } else if (s_card_seen && now - s_card < pdMS_TO_TICKS(CARD_MS)) {
             color = LED_PURPLE;
-        else if (s_cart_off)
-            color = LED_YELLOW;
-        else if (wifi_link_state() != WIFI_STATE_READY && (pdTICKS_TO_MS(now) / BLINK_MS) % 2 == 0)
-            color = LED_BLUE;
+        } else {
+            led_color_t states[3];
+            int n = 0;
+            if (s_setup)
+                states[n++] = LED_WHITE;
+            if (s_cart_off)
+                states[n++] = LED_YELLOW;
+            if (wifi_link_state() != WIFI_STATE_READY)
+                states[n++] = LED_BLUE;
+            if (n == 1)
+                color = states[0] == LED_YELLOW || step % 2 == 0 ? states[0] : LED_OFF;
+            else if (n > 1)
+                color = states[step % n];
+        }
         if (color != shown) {
             show(color);
             shown = color;
@@ -112,4 +127,9 @@ void status_led_card(void)
 void status_led_cart_off(bool off)
 {
     s_cart_off = off;
+}
+
+void status_led_setup(bool on)
+{
+    s_setup = on;
 }

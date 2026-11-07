@@ -51,6 +51,8 @@ typedef struct {
     struct sockaddr_in addr;
     bool have_addr;
     int64_t next_try;
+    tnfs_problem_t problem;         // why the last mount failed
+    uint8_t refused;                // the TNFS error of a refused mount
 } slot_t;
 
 static slot_t s_slots[TNFS_MAX_SLOTS];
@@ -145,11 +147,21 @@ static bool mount(slot_t *s)
 {
     if (s->mounted)
         return true;
-    if (wifi_link_state() != WIFI_STATE_READY || esp_timer_get_time() < s->next_try)
+    if (wifi_link_state() != WIFI_STATE_READY) {
+        s->problem = TNFS_NO_WIFI;
+        return false;
+    }
+    if (esp_timer_get_time() < s->next_try)
         return false;
     s->next_try = esp_timer_get_time() + RETRY_US;
-    if (!open_socket() || !resolve(s))
+    if (!open_socket()) {
+        s->problem = TNFS_NO_ANSWER;
         return false;
+    }
+    if (!resolve(s)) {
+        s->problem = TNFS_NO_HOST;
+        return false;
+    }
     uint8_t m[64];
     size_t pl = strlen(s->mount);
     m[0] = 0x02;                    // version 1.2: minor, major
@@ -161,16 +173,88 @@ static bool mount(slot_t *s)
     int n = request(s, CMD_MOUNT, m, 5 + pl);
     if (n < 0) {
         ESP_LOGW(TAG, "no answer from %s:%u", s->host, s->port);
+        s->problem = TNFS_NO_ANSWER;
         return false;
     }
     if (s_rx[4] != ST_OK) {
         ESP_LOGW(TAG, "mount of %s refused: 0x%02x", s->mount, s_rx[4]);
+        s->problem = TNFS_REFUSED;
+        s->refused = s_rx[4];
         return false;
     }
     s->conn = s_rx[0] | (s_rx[1] << 8);
     s->mounted = true;
     ESP_LOGI(TAG, "mounted %s:%s", s->host, s->mount);
     return true;
+}
+
+bool tnfs_ready(int slot)
+{
+    return slot >= 0 && slot < TNFS_MAX_SLOTS && mount(&s_slots[slot]);
+}
+
+// Shown on the Atari as NET_ERR.TXT (or NET_WAIT.TXT while Wi-Fi still connects), the way
+// acsi2tnfs and SideTNFS do it
+size_t tnfs_problem_text(int slot, char *out, size_t size, bool *waiting)
+{
+    if (slot < 0 || slot >= TNFS_MAX_SLOTS || !size)
+        return 0;
+    const slot_t *s = &s_slots[slot];
+    wifi_status_t w;
+    wifi_status(&w);
+    char reason[96], advice[320];
+    *waiting = false;
+    if (s->problem == TNFS_NO_WIFI && w.setup) {
+        snprintf(reason, sizeof(reason), "TheHulk is in AP mode, no Wi-Fi");
+        snprintf(advice, sizeof(advice),
+                 "TheHulk has its own network \"%s\" for its web\r\n"
+                 "page (http://192.168.4.1) and is not connected to your\r\n"
+                 "Wi-Fi. Switch AP mode off on the web page, or hold\r\n"
+                 "button 1 for 10 seconds, then reset the Atari.\r\n", w.ap_ssid);
+    } else if (s->problem == TNFS_NO_WIFI && !w.ssid[0]) {
+        snprintf(reason, sizeof(reason), "no Wi-Fi network set");
+        snprintf(advice, sizeof(advice),
+                 "Set the Wi-Fi network in THEHULK.PRG or on the web\r\n"
+                 "page, then reset the Atari.\r\n");
+    } else if (s->problem == TNFS_NO_WIFI && wifi_link_state() == WIFI_STATE_BUSY) {
+        *waiting = true;
+        snprintf(reason, sizeof(reason), "still connecting to Wi-Fi \"%s\"", w.ssid);
+        snprintf(advice, sizeof(advice),
+                 "Close this window and open the drive again in a\r\n"
+                 "moment.\r\n");
+    } else if (s->problem == TNFS_NO_WIFI) {
+        snprintf(reason, sizeof(reason), "no connection with Wi-Fi \"%s\"", w.ssid);
+        snprintf(advice, sizeof(advice),
+                 "Check that the network is in range and that the\r\n"
+                 "password is right. TheHulk keeps trying: close this\r\n"
+                 "window and open the drive again later.\r\n");
+    } else if (s->problem == TNFS_NO_HOST) {
+        snprintf(reason, sizeof(reason), "server name not found");
+        snprintf(advice, sizeof(advice),
+                 "Check the server name in THEHULK.PRG or on the web\r\n"
+                 "page.\r\n");
+    } else if (s->problem == TNFS_REFUSED) {
+        snprintf(reason, sizeof(reason), "mount refused (TNFS error 0x%02X)", s->refused);
+        snprintf(advice, sizeof(advice),
+                 "Check that the folder exists on the server.\r\n");
+    } else {
+        snprintf(reason, sizeof(reason), "no answer from the server");
+        snprintf(advice, sizeof(advice),
+                 "Check that the TNFS server runs and can be reached,\r\n"
+                 "and that the address and port are right. Close this\r\n"
+                 "window and open the drive again to try once more.\r\n");
+    }
+    int n = snprintf(out, size,
+                     "TheHulk: network drive not %s\r\n"
+                     "\r\n"
+                     "Reason : %s\r\n"
+                     "Server : %s:%u\r\n"
+                     "Folder : %s\r\n"
+                     "\r\n"
+                     "%s",
+                     *waiting ? "ready yet" : "available", reason, s->host, s->port,
+                     s->mount[0] ? s->mount : "/", advice);
+    return n < 0 ? 0 : (size_t)n >= size ? size - 1 : (size_t)n;
 }
 
 // A request on a mounted session: mounts again when the server lost the session

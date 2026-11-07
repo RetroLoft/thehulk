@@ -64,6 +64,22 @@ static void flash_files_init(void)
                                  (uint32_t)(stingins_tos_end - stingins_tos_start) };
 }
 
+// A TNFS drive that cannot be reached shows one read-only file in its root, with the reason:
+// NET_ERR.TXT, or NET_WAIT.TXT while Wi-Fi still connects (as acsi2tnfs and SideTNFS)
+static char s_err_text[FS_MAX_SLOTS][640];
+static flash_file_t s_err_file[FS_MAX_SLOTS];
+
+static const flash_file_t *tnfs_err_file(int slot)
+{
+    if (slot < 0 || slot >= FS_MAX_SLOTS || !s_is_tnfs[slot] || tnfs_ready(slot))
+        return NULL;
+    bool waiting;
+    size_t n = tnfs_problem_text(slot, s_err_text[slot], sizeof(s_err_text[slot]), &waiting);
+    s_err_file[slot] = (flash_file_t){ waiting ? "NET_WAIT.TXT" : "NET_ERR.TXT",
+                                       (const uint8_t *)s_err_text[slot], (uint32_t)n };
+    return &s_err_file[slot];
+}
+
 typedef struct {
     bool used;
     FIL fil;
@@ -86,6 +102,7 @@ typedef struct {
     bool flash;                     // still listing the built-in files
     bool flash_root;                // the root of the flash drive: built-in names win
     int flash_next;
+    const flash_file_t *err_file;   // a TNFS drive that cannot be reached: only this
     bool dir_open;                  // FF_DIR open
     bool on_card;
     int tnfs_slot;                  // on a TNFS drive: no FF_DIR (-1: not)
@@ -565,6 +582,21 @@ static const flash_file_t *builtin(int slot, const char *apath)
 static int16_t next_match(search_t *s, uint8_t *dta_out)
 {
     FILINFO fno;
+    if (s->open && s->err_file) {
+        const flash_file_t *f = s->err_file;
+        s->err_file = NULL;
+        s->open = false;
+        if (match(s, f->name) && attribs_ok(s->attribs, AM_RDO)) {
+            memset(&fno, 0, sizeof(fno));
+            fno.fsize = f->size;
+            fno.ftime = FLASH_TIME;
+            fno.fdate = FLASH_DATE;
+            fno.fattrib = AM_RDO;
+            strncpy(fno.fname, f->name, sizeof(fno.fname) - 1);
+            fill_dta(dta_out, &fno);
+            return GEMDOS_EOK;
+        }
+    }
     while (s->open && s->tnfs_slot >= 0) {
         tnfs_entry_t e;
         if (tnfs_dir_next(s->tnfs_slot, s->tnfs_handle, &e) <= 0) {
@@ -639,6 +671,18 @@ int16_t fs_fsfirst(int slot, uint32_t dta, const char *path, uint16_t attribs, u
         uint8_t h;
         if (!to_tnfs(slot, adir[0] ? adir : ".", fat, sizeof(fat)))
             return GEMDOS_EPTHNF;
+        const flash_file_t *err = tnfs_err_file(slot);
+        if (err) {
+            if (to_fat(slot, adir[0] ? adir : ".", fat, sizeof(fat)) && strcmp(fat, "/"))
+                return GEMDOS_EPTHNF;   // only the root, with the file
+            search_t *s = new_search(dta);
+            s->attribs = attribs;
+            s->err_file = err;
+            s->open = true;
+            make_pattern(pattern, s->name, s->ext);
+            int16_t found = next_match(s, dta_out);
+            return found == GEMDOS_ENMFIL ? GEMDOS_EFILNF : found;
+        }
         int r = tnfs_dir_open(slot, fat, &h);
         if (r < 0)
             return r;
@@ -802,6 +846,12 @@ int32_t fs_fopen(int slot, const char *path, uint16_t mode)
     status_led_activity();
     char fat[MAX_PATH];
     const flash_file_t *ff = builtin(slot, path);
+    if (!ff && slot_is_tnfs(slot) && (ff = tnfs_err_file(slot)) != NULL) {
+        char want[16];
+        snprintf(want, sizeof(want), "/%s", ff->name);
+        if (!to_fat(slot, path, fat, sizeof(fat)) || strcmp(fat, want))
+            return GEMDOS_EFILNF;       // nothing else there
+    }
     if ((mode & 3) != 0 && (ff || (!slot_is_tnfs(slot) && !slot_is_fat(slot))))
         return GEMDOS_EACCDN;           // the built-in files are read-only
     if (ff) {

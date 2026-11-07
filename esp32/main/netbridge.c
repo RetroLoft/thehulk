@@ -132,12 +132,13 @@ uint32_t net_bridge_pending(void)
     return s_rx_head - s_rx_tail;
 }
 
-void net_bridge_info(uint8_t *b, bool link)
+void net_bridge_info(uint8_t *b, bool link, bool no_wifi)
 {
     memset(b, 0, 128);
     memcpy(b, "ATN", 3);
     put16(b + 4, 1);                            // protocol version
-    put16(b + 6, 0x0001 | (link ? 0x0002 : 0)); // NET_CTRL works, frames can pass
+    // NET_CTRL works, frames can pass, no Wi-Fi to wait for (AP mode)
+    put16(b + 6, 0x0001 | (link ? 0x0002 : 0) | (no_wifi ? 0x0004 : 0));
     b[8] = (link ? 0x01 : 0) | (s_atari_ip ? 0x02 : 0);
     memcpy(b + 10, s_mac, 6);
     put32(b + 16, s_my_ip);

@@ -384,6 +384,37 @@ bool gemdrv_poll(void)
     return changed;
 }
 
+// The drive table from the settings: at the start of the cartridge and again when GEMDRIVE
+// starts (SVERSION), so a change made meanwhile (web page) counts from the next reset
+static void load_drives(void)
+{
+    // The drives from the settings, then the flash drive
+    int slots = 0;
+    for (int i = 0; i < SETTINGS_MAX_DRIVES; i++) {
+        const settings_drive_t *d = settings_drive(i);
+        if (d->state != SETTINGS_DRIVE_ENABLED)
+            continue;
+        if (d->type == SETTINGS_TYPE_TNFS) {
+            if (d->transport != 0)
+                ESP_LOGW(TAG, "drive %c: TCP is not there yet, using UDP", d->letter);
+            fs_set_tnfs_slot(slots, d->host, d->port, d->mount_path);
+        } else {
+            fs_set_sd_slot(slots, d->sd_path);
+        }
+        s_slot_drive[slots++] = d->letter - 'A';
+    }
+    fs_set_flash_slot(slots);
+    s_slot_drive[slots++] = settings_flash_letter() - 'A';
+    s_slot_count = slots;
+    const uint32_t drive_number = s_slot_drive[0];
+    set_shared_var(SHARED_VARIABLE_FIRST_FILE_DESCRIPTOR, FIRST_FILE_DESCRIPTOR);
+    set_shared_var(SHARED_VARIABLE_DRIVE_LETTER, 'A' + drive_number);
+    set_shared_var(SHARED_VARIABLE_DRIVE_NUMBER, drive_number);
+    set_shared_var(SHARED_VARIABLE_DRIVE_COUNT, slots);
+    for (int i = 0; i < GEMDRIVE_MAX_RUNTIME_DRIVES; i++)
+        set_shared_var(SHARED_VARIABLE_DRIVE_NUMBER_TABLE + i, i < slots ? s_slot_drive[i] : 0xFFFFFFFF);
+}
+
 void gemdrv_init(void)
 {
     uintptr_t m = shared();
@@ -407,34 +438,10 @@ void gemdrv_init(void)
 #endif
     WRITE_WORD(m, GEMDRVEMUL_FLOPPY_SESSION_INSTALL_FLOPPY, 0);
 
-    // The drives from the settings, then the flash drive with the configuration program
-    int slots = 0;
-    for (int i = 0; i < SETTINGS_MAX_DRIVES; i++) {
-        const settings_drive_t *d = settings_drive(i);
-        if (d->state != SETTINGS_DRIVE_ENABLED)
-            continue;
-        if (d->type == SETTINGS_TYPE_TNFS) {
-            if (d->transport != 0)
-                ESP_LOGW(TAG, "drive %c: TCP is not there yet, using UDP", d->letter);
-            fs_set_tnfs_slot(slots, d->host, d->port, d->mount_path);
-        } else {
-            fs_set_sd_slot(slots, d->sd_path);
-        }
-        s_slot_drive[slots++] = d->letter - 'A';
-    }
-    fs_set_flash_slot(slots);
-    s_slot_drive[slots++] = settings_flash_letter() - 'A';
-    s_slot_count = slots;
-    const uint32_t drive_number = s_slot_drive[0];
-    set_shared_var(SHARED_VARIABLE_FIRST_FILE_DESCRIPTOR, FIRST_FILE_DESCRIPTOR);
-    set_shared_var(SHARED_VARIABLE_DRIVE_LETTER, 'A' + drive_number);
-    set_shared_var(SHARED_VARIABLE_DRIVE_NUMBER, drive_number);
+    load_drives();
     set_shared_var(SHARED_VARIABLE_BUFFER_TYPE, 0);            // 0: _dskbufp, 1: stack
     set_shared_var(SHARED_VARIABLE_FAKE_FLOPPY, 0);
     set_shared_var(SHARED_VARIABLE_PROTOCOL_VERSION, GEMDOS_SLOT_PROTOCOL_VERSION);
-    set_shared_var(SHARED_VARIABLE_DRIVE_COUNT, slots);
-    for (int i = 0; i < GEMDRIVE_MAX_RUNTIME_DRIVES; i++)
-        set_shared_var(SHARED_VARIABLE_DRIVE_NUMBER_TABLE + i, i < slots ? s_slot_drive[i] : 0xFFFFFFFF);
     // Keep booting from the Atari's own drive (later a setting)
     set_shared_var(SHARED_VARIABLE_SET_CURRENT_DRIVE, 0);
     set_shared_var(SHARED_VARIABLE_NO_INSTALL, HULK_GEMDRIVE_NO_INSTALL);
@@ -526,6 +533,7 @@ void gemdrv_command(const hulk_packet_t *pkt)
             set_shared_var(SHARED_VARIABLE_RAM_FREAD_COPY, 0);
             net_bridge_set(0, 0);       // STinG is gone with the reset
             fs_reset();
+            load_drives();
             // The keyboard clock of TOS 1 cannot hold a year after 1999. GEMDRIVE then
             // sets a year 30 back and corrects XBIOS Gettime. A low word with the high
             // bit set is EmuTOS, which handles this itself; TOS 2 and up have no need.
@@ -914,7 +922,8 @@ void gemdrv_command(const hulk_packet_t *pkt)
     // --- The network for the Atari (CART_NET.STX, netbridge.c) -------------------------
     case GEMDRVEMUL_NET_INFO_CALL: {
         uint8_t info[GEMDRVEMUL_NET_INFO_SIZE];
-        net_bridge_info(info, wifi_link_state() == WIFI_STATE_READY);
+        bool link = wifi_link_state() == WIFI_STATE_READY;
+        net_bridge_info(info, link, !link && wifi_setup_active());
         write_bytes(GEMDRVEMUL_NET_INFO, info, sizeof(info));
         shadow_mark(SHADOW_ROM3 + GEMDRVEMUL_NET_INFO, sizeof(info));
         net_status(m, 0);

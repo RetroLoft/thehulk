@@ -25,7 +25,8 @@ uint32_t net_bridge_tx(const uint8_t *frame, uint32_t len);
 uint32_t net_bridge_pending(void);      // frames waiting for the Atari
 // NET_INFO for the Atari, 128 bytes as in ACSI2TNFS: "ATN", version, capabilities, state,
 // MAC, the ESP32's IP, mask and gateway, the Atari's IP and mask, MTU, counters
-void net_bridge_info(uint8_t *b, bool link);
+// no_wifi: setup mode (AP mode) without a connection, the driver need not wait for one
+void net_bridge_info(uint8_t *b, bool link, bool no_wifi);
 
 void net_bridge_status(void);           // to the log: addresses and counters
 // Diagnostics: the ESP32 itself answers ARP and ping for 'ip', as the Atari would

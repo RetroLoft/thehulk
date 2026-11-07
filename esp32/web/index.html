@@ -1,0 +1,664 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TheHulk</title>
+<style>
+  :root {
+    --bg: #f4f5f7; --card: #fff; --text: #1d2330; --muted: #5f6878; --line: #d8dce3;
+    --accent: #1f6feb; --active: #1a7f37; --active-bg: #e8f5ec; --warn: #9a6700;
+    --warn-bg: #fff8e1; --err: #c62828; --err-bg: #fdecec; --btn: #1f6feb; --btn-text: #fff;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #11141a; --card: #1b2029; --text: #e6e9ef; --muted: #9aa3b2; --line: #2e3542;
+      --accent: #58a6ff; --active: #3fb950; --active-bg: #16271c; --warn: #d29922;
+      --warn-bg: #2a2413; --err: #f85149; --err-bg: #2d1718; --btn: #2f81f7;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  header { display: flex; align-items: center; justify-content: space-between; gap: 12px;
+           padding: 12px 16px; background: var(--card); border-bottom: 1px solid var(--line); }
+  header h1 { margin: 0; font-size: 20px; }
+  header h1 a { color: inherit; text-decoration: none; }
+  header h1 .dev { color: var(--muted); font-weight: 400; font-size: 15px; margin-left: 6px; }
+  main { max-width: 920px; margin: 0 auto; padding: 16px; display: grid; gap: 16px; }
+  section { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 16px; }
+  h2 { margin: 0 0 12px; font-size: 17px; }
+  h3 { margin: 14px 0 8px; font-size: 15px; }
+  .muted { color: var(--muted); }
+  .small { font-size: 13px; }
+  .conn { font-size: 13px; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--line); }
+  .conn.ok { color: var(--active); }
+  .conn.bad { color: var(--err); border-color: var(--err); }
+  .banner { padding: 10px 14px; border-radius: 8px; border: 1px solid; }
+  .banner.err { background: var(--err-bg); border-color: var(--err); color: var(--err); }
+  .banner.warn { background: var(--warn-bg); border-color: var(--warn); color: var(--warn); }
+  .banner.ok { background: var(--active-bg); border-color: var(--active); color: var(--active); }
+  .hidden { display: none !important; }
+  .badge { display: inline-block; font-size: 12px; font-weight: 600; padding: 1px 8px;
+           border-radius: 999px; border: 1px solid currentColor; white-space: nowrap; }
+  .badge.active { color: var(--active); background: var(--active-bg); }
+  .badge.off { color: var(--muted); }
+  .badge.temp { color: var(--warn); background: var(--warn-bg); }
+  button { font: inherit; cursor: pointer; border-radius: 8px; padding: 7px 14px;
+           border: 1px solid var(--btn); background: var(--btn); color: var(--btn-text); }
+  button.secondary { background: transparent; color: var(--accent); border-color: var(--line); }
+  button.danger { background: transparent; color: var(--err); border-color: var(--line); }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  input[type=text], input[type=password], input[type=number], select { font: inherit; padding: 7px 10px;
+           border-radius: 8px; border: 1px solid var(--line); background: var(--bg); color: var(--text); }
+  input.letter { width: 3.2em; text-align: center; text-transform: uppercase; }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .grow { flex: 1 1 200px; min-width: 0; }
+  dl.kv { display: grid; grid-template-columns: max-content 1fr; gap: 4px 16px; margin: 0; }
+  dl.kv dt { color: var(--muted); }
+  dl.kv dd { margin: 0; word-break: break-word; }
+  ul.slots { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+  ul.slots li { display: grid; grid-template-columns: 2.4em minmax(0, 1fr) auto; gap: 10px; align-items: center;
+                padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; }
+  ul.slots li.free { padding: 4px 10px; color: var(--muted); }
+  ul.slots li.disabled { opacity: .6; }
+  .slotno { font-weight: 700; text-align: right; color: var(--muted); }
+  .slotname { font-weight: 600; word-break: break-word; }
+  .actions { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
+  .actions button { padding: 5px 10px; }
+  .form { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 8px 12px; align-items: center; }
+  .form label { color: var(--muted); }
+  .form .wide { grid-column: 1 / -1; }
+  .edit { border: 2px solid var(--accent); border-radius: 8px; padding: 12px; margin-top: 8px; }
+  .modes { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; }
+  .mode { border: 1px solid var(--line); border-radius: 8px; padding: 12px; display: grid; gap: 6px; }
+  .mode.active { border: 2px solid var(--active); background: var(--active-bg); }
+  .mode .title { font-weight: 600; }
+  .switch { display: flex; gap: 10px; align-items: center; }
+  label.toggle { position: relative; display: inline-block; width: 40px; height: 22px; flex: none; cursor: pointer; }
+  label.toggle input { opacity: 0; width: 0; height: 0; }
+  label.toggle span { position: absolute; inset: 0; background: var(--line); border-radius: 999px; transition: .15s; }
+  label.toggle span::before { content: ""; position: absolute; width: 16px; height: 16px; left: 3px; top: 3px;
+                              background: #fff; border-radius: 50%; transition: .15s; }
+  label.toggle input:checked + span { background: var(--active); }
+  label.toggle input:checked + span::before { transform: translateX(18px); }
+  label.toggle input:disabled + span { opacity: .5; cursor: wait; }
+  a.iconbtn { display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px;
+              border-radius: 8px; border: 1px solid var(--line); color: var(--text); }
+  a.iconbtn:hover, a.iconbtn[aria-current=page] { color: var(--accent); border-color: var(--accent); }
+  .hdr-right { display: flex; align-items: center; gap: 10px; }
+  .wrap { max-width: 920px; margin: 0 auto; padding: 0 16px; }
+  .savebar { position: sticky; bottom: 0; background: var(--card); border-top: 1px solid var(--line);
+             padding: 10px 16px; display: flex; gap: 10px; align-items: center; justify-content: flex-end; }
+  a { color: var(--accent); }
+  @media (max-width: 560px) {
+    ul.slots li { grid-template-columns: 2em minmax(0, 1fr); }
+    ul.slots li .actions { grid-column: 1 / -1; justify-content: flex-start; }
+    .form { grid-template-columns: 1fr; }
+  }
+  dialog.ask { border: 1px solid var(--line); border-radius: 12px; padding: 0; max-width: 460px;
+               width: calc(100% - 32px); background: var(--card); color: var(--text);
+               box-shadow: 0 10px 40px rgba(0,0,0,.35); }
+  dialog.ask::backdrop { background: rgba(0,0,0,.55); }
+  dialog.ask .body { padding: 20px; display: grid; gap: 12px; }
+  dialog.ask h3 { margin: 0; font-size: 18px; }
+  dialog.ask p { margin: 0; line-height: 1.45; }
+  #ask-text { display: grid; gap: 10px; }
+  dialog.ask .atari { border: 3px solid var(--err); background: var(--err-bg); color: var(--err);
+                      border-radius: 10px; padding: 14px; text-align: center; }
+  dialog.ask .atari strong { display: block; font-size: 24px; letter-spacing: .5px; }
+  dialog.ask .atari .now { margin-top: 6px; font-weight: 700; }
+  dialog.ask .buttons { display: flex; gap: 8px; justify-content: flex-end; padding: 12px 20px;
+                        border-top: 1px solid var(--line); }
+  .offline { position: fixed; inset: 0; z-index: 100; background: rgba(0,0,0,.6);
+             display: flex; align-items: center; justify-content: center; padding: 16px; }
+  .offline.hidden { display: none; }
+  .offline .card { background: var(--card); color: var(--text); border: 3px solid var(--err);
+                   border-radius: 12px; padding: 20px; max-width: 440px; display: grid; gap: 10px;
+                   box-shadow: 0 10px 40px rgba(0,0,0,.4); }
+  .offline strong { color: var(--err); font-size: 32px; letter-spacing: 1px; text-align: center; }
+  .offline .sub { color: var(--err); font-weight: 700; text-align: center; margin-top: -6px; }
+  .offline p { margin: 0; line-height: 1.45; }
+</style>
+</head>
+<body>
+<header>
+  <h1><a href="#">TheHulk</a><span id="devname" class="dev"></span></h1>
+  <div class="hdr-right">
+    <span id="conn" class="conn">Connecting…</span>
+    <a id="gear" class="iconbtn" href="#settings" title="Settings" aria-label="Settings">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+           stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <circle cx="12" cy="12" r="3"/>
+        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+      </svg>
+    </a>
+  </div>
+</header>
+
+<div class="wrap">
+  <div id="offline" class="offline hidden" role="alert">
+    <div class="card">
+      <strong>OFFLINE</strong>
+      <div class="sub">No connection with TheHulk</div>
+      <p>This page cannot reach TheHulk: what it shows is out of date and changes are not saved.</p>
+      <p>Is this phone or computer still on the same network as TheHulk: your own Wi-Fi, or
+         TheHulk's own network <span id="offline-ap"></span>? Phones often switch back to a known
+         network by themselves.</p>
+      <p class="muted small">Trying again every few seconds…</p>
+    </div>
+  </div>
+  <div id="nowifi" class="banner err hidden" role="alert" style="margin-top:16px">
+    <strong>TheHulk is not connected to Wi-Fi <span id="nowifi-ssid"></span>.</strong>
+    TNFS drives, STinG and the time from the internet do not work. <span id="nowifi-why"></span>
+  </div>
+  <div id="setupnote" class="banner warn hidden" role="status" style="margin-top:16px">
+    <strong>AP mode:</strong> TheHulk has its own Wi-Fi network <span id="setupssid"></span>, open, at
+    <a href="http://192.168.4.1/">192.168.4.1</a>.
+    <button class="secondary" id="setupleave" type="button">Switch it off</button>
+  </div>
+</div>
+
+<dialog id="ask" class="ask">
+  <div class="body">
+    <h3 id="ask-title"></h3>
+    <div id="ask-atari" class="atari hidden">
+      <strong>SWITCH OFF YOUR ATARI</strong>
+      <div>before you go on</div>
+      <div id="ask-atari-now" class="now hidden">The Atari is on now.</div>
+    </div>
+    <div id="ask-text"></div>
+  </div>
+  <div class="buttons">
+    <button class="secondary" id="ask-cancel" type="button">Cancel</button>
+    <button id="ask-ok" type="button">OK</button>
+  </div>
+</dialog>
+
+<!-- ============ Front page ============ -->
+<main id="front">
+  <section>
+    <h2>TheHulk</h2>
+    <dl class="kv">
+      <dt>Atari</dt><dd id="atari">–</dd>
+      <dt>Wi-Fi</dt><dd id="wifi">–</dd>
+      <dt>Address</dt><dd id="addr">–</dd>
+      <dt>Firmware</dt><dd id="version">–</dd>
+    </dl>
+  </section>
+
+  <section>
+    <h2>Mode</h2>
+    <div class="modes">
+      <div class="mode" id="mode-cart">
+        <div class="title">Cartridge</div>
+        <div class="muted small">GEMDRIVE: the SD card, TNFS and flash drives, and the network for STinG.</div>
+        <div class="switch">
+          <span id="cartstate" class="badge off">–</span>
+          <button id="carttoggle" type="button" disabled>…</button>
+        </div>
+        <div id="cartnote" class="muted small hidden">From the next reset of the Atari (switched off: from the next power-on).</div>
+      </div>
+      <div class="mode">
+        <div class="title">Floppy emulator</div>
+        <div class="muted small">Coming later.</div>
+      </div>
+      <div class="mode">
+        <div class="title">Cartridge emulator</div>
+        <div class="muted small">Coming later.</div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<!-- ============ Settings ============ -->
+<main id="settings" class="hidden">
+  <div class="banner warn">Saved settings take effect after the next <strong>reset of the Atari</strong>.</div>
+  <div id="msg" class="banner hidden" role="status"></div>
+
+  <section>
+    <h2>Device</h2>
+    <div class="form">
+      <label for="s-name">Device name</label>
+      <input type="text" id="s-name" maxlength="32">
+      <span></span>
+      <span class="muted small">To tell several cartridges apart. Host name: <span id="s-host" class="code"></span>
+        (<span id="s-local"></span>), and the name of its network in setup mode.</span>
+    </div>
+  </section>
+
+  <section>
+    <h2>Drives</h2>
+    <ul class="slots" id="drives"></ul>
+    <div id="driveedit" class="edit hidden"></div>
+    <h3>Flash drive</h3>
+    <div class="form">
+      <label for="s-flash">Letter</label>
+      <div class="row"><input type="text" id="s-flash" class="letter" maxlength="1">
+        <span class="muted small">About 10 MB in TheHulk itself, with THEHULK.PRG and STINGINS.TOS.
+          <code>C:</code> on an ST without hard disk to start from it.</span></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Wi-Fi</h2>
+    <div class="banner warn small" style="margin-bottom:10px">Changing these settings drops the
+      connection: TNFS drives and STinG stop until TheHulk is back on the network. Switch the Atari off first.</div>
+    <div class="form">
+      <label for="s-ssid">Network</label><input type="text" id="s-ssid" maxlength="32">
+      <label for="s-pw">Password</label>
+      <div class="row"><input type="password" id="s-pw" maxlength="64" class="grow" placeholder="unchanged">
+        <label class="small"><input type="checkbox" id="s-pwshow"> show</label></div>
+      <label for="s-dhcp">Address</label>
+      <select id="s-dhcp"><option value="1">Automatic (DHCP)</option><option value="0">Fixed</option></select>
+      <label for="s-ip" class="fixed">IP address</label><input type="text" id="s-ip" class="fixed" maxlength="15">
+      <label for="s-mask" class="fixed">Subnet mask</label><input type="text" id="s-mask" class="fixed" maxlength="15">
+      <label for="s-gw" class="fixed">Gateway</label><input type="text" id="s-gw" class="fixed" maxlength="15">
+      <label for="s-dns" class="fixed">DNS server</label><input type="text" id="s-dns" class="fixed" maxlength="15">
+      <label for="s-country">Country</label>
+      <div class="row"><input type="text" id="s-country" class="letter" maxlength="2">
+        <span class="muted small">Two letters, e.g. NL (Wi-Fi channels).</span></div>
+    </div>
+    <div class="row" style="margin-top:10px"><button class="secondary" id="scan" type="button">Search networks</button>
+      <span id="scanstate" class="muted small"></span></div>
+    <ul class="slots" id="nets" style="margin-top:8px"></ul>
+    <p class="small muted">Away from home: hold button 1 for 10 s (AP mode). TheHulk then opens its own
+      Wi-Fi network with this whole page at 192.168.4.1.</p>
+    <div class="row"><span>AP mode: <strong id="apstate">–</strong></span>
+      <button class="secondary" id="setupstart" type="button">Switch AP mode on</button></div>
+  </section>
+
+  <section>
+    <h2>Clock</h2>
+    <div class="form">
+      <label for="s-ntp-on">Set the Atari's clock</label>
+      <select id="s-ntp-on"><option value="1">Yes, from a time server</option><option value="0">No</option></select>
+      <label for="s-ntp">Time server</label><input type="text" id="s-ntp" maxlength="63">
+      <label for="s-utc">Time zone</label>
+      <div class="row"><input type="text" id="s-utc" class="letter" maxlength="3">
+        <span class="muted small">Hours from UTC, e.g. +1. No automatic summer time.</span></div>
+    </div>
+  </section>
+</main>
+<div id="savebar" class="savebar hidden">
+  <span id="dirty" class="muted small"></span>
+  <button class="secondary" id="revert" type="button">Revert</button>
+  <button id="save" type="button">Save</button>
+</div>
+
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+let status = null, cfg = null, editing = -1, failures = 0;
+
+// A TheHulk that restarts or left the network does not answer at all: without a time limit
+// fetch() would wait minutes and the page would not see it is offline
+async function api(method, path, body, ms) {
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), ms || 5000);
+  const opt = { method, headers: {}, signal: ctl.signal };
+  if (body !== undefined) { opt.headers["Content-Type"] = "application/json"; opt.body = JSON.stringify(body); }
+  let r;
+  try { r = await fetch(path, opt); }
+  catch (e) { throw new Error(ctl.signal.aborted ? "TheHulk does not answer." : "TheHulk cannot be reached."); }
+  finally { clearTimeout(timer); }
+  let data = {};
+  try { data = await r.json(); } catch (e) {}
+  if (!r.ok) throw new Error(data.message || ("HTTP " + r.status));
+  return data;
+}
+function esc(s) { return String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+function show(el, on) { el.classList.toggle("hidden", !on); }
+function message(kind, text) { const m = $("msg"); m.className = "banner " + kind; m.textContent = text; show(m, !!text); }
+
+// ---------- State ----------
+let pollTimer = null;
+async function poll() {
+  clearTimeout(pollTimer);              // one loop, also when a button asks for a poll now
+  try {
+    status = await api("GET", "/api/v1/status");
+    failures = 0;
+    show($("offline"), false);
+    $("conn").textContent = "Connected"; $("conn").className = "conn ok";
+    render();
+  } catch (e) {
+    if (++failures >= 2) {
+      $("offline-ap").textContent = status && status.wifi.setup ? "“" + status.wifi.setup_ssid + "”" : "";
+      show($("offline"), true);
+      $("conn").textContent = "Offline"; $("conn").className = "conn bad";
+    }
+  }
+  clearTimeout(pollTimer);
+  pollTimer = setTimeout(poll, 3000);
+}
+function render() {
+  const s = status;
+  document.title = s.name === "TheHulk" ? "TheHulk" : s.name + " – TheHulk";
+  $("devname").textContent = s.name === "TheHulk" ? "" : s.name;
+  $("atari").textContent = s.atari_on ? "On" : "Off";
+  $("wifi").textContent = s.wifi.ip ? s.wifi.ssid + " (" + s.wifi.rssi + " dBm)" :
+                          s.wifi.ssid ? s.wifi.ssid + " – not connected" : "not set";
+  $("addr").textContent = s.wifi.ip ? s.wifi.ip + " · " + s.hostname + ".local" : "–";
+  $("version").textContent = s.version;
+  const on = s.cartridge.on;
+  $("cartstate").textContent = on ? "On" : "Off";
+  $("cartstate").className = "badge " + (on ? "active" : "off");
+  $("mode-cart").classList.toggle("active", on);
+  $("carttoggle").textContent = on ? "Switch off" : "Switch on";
+  $("carttoggle").disabled = false;
+  show($("cartnote"), s.atari_on);
+  show($("setupnote"), s.wifi.setup);
+  show($("nowifi"), !s.wifi.ip);
+  $("nowifi-ssid").textContent = s.wifi.ssid ? "“" + s.wifi.ssid + "”" : "";
+  $("nowifi-why").textContent = !s.wifi.ssid ? "No network is set: choose one under Settings, Wi-Fi." :
+      s.wifi.setup ? "In AP mode TheHulk does not search for it: switch AP mode off to search again." :
+      "Is the network in range, and are its name and password right (Settings, Wi-Fi)? TheHulk keeps trying.";
+  $("apstate").textContent = s.wifi.setup ? "on, network " + s.wifi.setup_ssid : "off";
+  $("setupstart").textContent = s.wifi.setup ? "Switch AP mode off" : "Switch AP mode on";
+  $("setupssid").textContent = "“" + s.wifi.setup_ssid + "”";
+}
+// Our own dialog instead of confirm()/alert(): { title, text (lines: \n\n), ok, cancel
+// (null: only OK), atari (switch the Atari off first), danger }. Resolves true for OK.
+function ask(o) {
+  const d = $("ask");
+  $("ask-title").textContent = o.title || "TheHulk";
+  const t = $("ask-text"); t.textContent = "";
+  String(o.text || "").split("\n\n").forEach(par => { const p = document.createElement("p"); p.textContent = par; t.appendChild(p); });
+  show($("ask-atari"), !!o.atari);
+  show($("ask-atari-now"), !!o.atari && !!(status && status.atari_on));
+  $("ask-ok").textContent = o.ok || "OK";
+  $("ask-ok").className = o.danger ? "danger" : "";
+  $("ask-cancel").textContent = o.cancel || "Cancel";
+  show($("ask-cancel"), o.cancel !== null);
+  return new Promise(resolve => {
+    const done = v => { d.close(); resolve(v); };
+    $("ask-ok").onclick = () => done(true);
+    $("ask-cancel").onclick = () => done(false);
+    d.oncancel = e => { e.preventDefault(); done(false); };
+    d.showModal();
+    $(o.cancel === null ? "ask-ok" : "ask-cancel").focus();
+  });
+}
+const tell = (text, title) => ask({ title: title || "Something went wrong", text, cancel: null });
+
+$("carttoggle").onclick = async () => {
+  $("carttoggle").disabled = true;
+  try { await api("PUT", "/api/v1/cartridge", { on: !status.cartridge.on }); } catch (e) { await tell(e.message); }
+  poll();
+};
+async function leaveSetup() {
+  const w = status.wifi;
+  let text = "TheHulk closes its own network " + w.setup_ssid + ".";
+  if (!w.ip)
+    text += "\n\nTheHulk is not connected to your Wi-Fi" + (w.ssid ? " " + w.ssid : "") + ": after this " +
+            "the page cannot be reached until it connects, or until you hold button 1 for 10 seconds " +
+            "to switch AP mode on again.";
+  else if (w.via_setup)
+    text += "\n\nYou are connected through that network: this page loses TheHulk. Connect to your " +
+            "own Wi-Fi again and open http://" + status.hostname + ".local/.";
+  if (!await ask({ title: "Switch AP mode off?", text, ok: "Switch AP mode off" })) return;
+  try {
+    await api("POST", "/api/v1/setup/leave", {});
+  } catch (e) {
+    if (!w.via_setup) return tell(e.message);   // through the own network the answer may not come
+  }
+  status.wifi.setup = false;
+  render();                                     // the banner goes at once
+  if (w.via_setup)
+    ask({ title: "AP mode is off", cancel: null,
+          text: w.ip ? "Connect to your own Wi-Fi again and open http://" + status.hostname + ".local/."
+                     : "TheHulk's own network is gone. Hold button 1 for 10 seconds to switch it on again." });
+};
+$("setupleave").onclick = leaveSetup;
+$("setupstart").onclick = async () => {
+  if (status.wifi.setup) return leaveSetup();
+  if (!await ask({ title: "Switch AP mode on?", atari: true,
+                   text: "TheHulk opens its own open Wi-Fi network, next to your Wi-Fi. Connect to it " +
+                         "and open http://192.168.4.1/ to reach this page without your own network, " +
+                         "for instance at a meeting.\n\nAP mode stays on, also after a restart, until you switch it off.",
+                   ok: "Switch AP mode on" })) return;
+  try { await api("POST", "/api/v1/setup/start", {}); } catch (e) { await tell(e.message); }
+};
+
+// ---------- Views ----------
+function route() {
+  const set = location.hash === "#settings";
+  show($("front"), !set); show($("settings"), set);
+  $("gear").toggleAttribute("aria-current", set);
+  if (set) loadSettings(); else show($("savebar"), false);
+}
+window.addEventListener("hashchange", route);
+
+// ---------- Settings ----------
+let saved = "";
+async function loadSettings() {
+  try { cfg = await api("GET", "/api/v1/settings"); } catch (e) { message("err", e.message); return; }
+  saved = JSON.stringify(cfg);
+  editing = -1;
+  fillForm();
+  show($("savebar"), true);
+  markDirty();
+}
+function fillForm() {
+  $("s-name").value = cfg.name;
+  $("s-host").textContent = cfg.hostname;
+  $("s-local").textContent = "http://" + cfg.hostname + ".local/";
+  $("s-flash").value = cfg.flash_letter;
+  const n = cfg.network;
+  $("s-ssid").value = n.ssid; $("s-pw").value = "";
+  $("s-pw").placeholder = n.password_set ? "unchanged" : "none";
+  $("s-dhcp").value = n.dhcp ? "1" : "0";
+  $("s-ip").value = n.ip; $("s-mask").value = n.netmask; $("s-gw").value = n.gateway; $("s-dns").value = n.dns;
+  $("s-country").value = n.country;
+  $("s-ntp-on").value = cfg.clock.enabled ? "1" : "0";
+  $("s-ntp").value = cfg.clock.ntp_server; $("s-utc").value = cfg.clock.utc_offset;
+  fixedFields(); renderDrives(); show($("driveedit"), false);
+}
+function fixedFields() { document.querySelectorAll(".fixed").forEach(e => show(e, $("s-dhcp").value === "0")); }
+function readForm() {
+  cfg.name = $("s-name").value.trim();
+  cfg.flash_letter = $("s-flash").value.toUpperCase();
+  const n = cfg.network;
+  n.ssid = $("s-ssid").value; n.dhcp = $("s-dhcp").value === "1";
+  n.ip = $("s-ip").value.trim(); n.netmask = $("s-mask").value.trim(); n.gateway = $("s-gw").value.trim();
+  n.dns = $("s-dns").value.trim(); n.country = $("s-country").value.toUpperCase();
+  if ($("s-pw").value) n.password = $("s-pw").value; else delete n.password;
+  cfg.clock.enabled = $("s-ntp-on").value === "1";
+  cfg.clock.ntp_server = $("s-ntp").value.trim(); cfg.clock.utc_offset = $("s-utc").value.trim();
+}
+function markDirty() {
+  if (!cfg) return;
+  readForm();
+  const dirty = JSON.stringify(cfg) !== saved;
+  $("dirty").textContent = dirty ? "Not saved yet" : "";
+  $("revert").disabled = !dirty;
+}
+document.querySelectorAll("#settings input, #settings select").forEach(e => {
+  e.addEventListener("input", markDirty); e.addEventListener("change", markDirty);
+});
+$("s-dhcp").addEventListener("change", fixedFields);
+$("s-pwshow").onchange = () => { $("s-pw").type = $("s-pwshow").checked ? "text" : "password"; };
+// A typed letter replaces the one there, in capitals
+document.querySelectorAll("input.letter[maxlength='1']").forEach(letterField);
+function letterField(e) {
+  e.addEventListener("keydown", ev => {
+    if (ev.key.length === 1 && /[a-z]/i.test(ev.key) && !ev.ctrlKey && !ev.metaKey) {
+      ev.preventDefault(); e.value = ev.key.toUpperCase(); e.dispatchEvent(new Event("input"));
+    }
+  });
+}
+$("revert").onclick = () => { cfg = JSON.parse(saved); fillForm(); markDirty(); message("", ""); };
+
+function letterWarning(l) {
+  return l > "P" ? "\n\nDrive " + l + ": works with MiNT, MagiC and EmuTOS. The original TOS only knows A: to P:, so " +
+                   "copying folders and programs that use the current drive go wrong there." : "";
+}
+$("save").onclick = async () => {
+  readForm();
+  const letters = [cfg.flash_letter].concat(cfg.drives.filter(d => d.state !== "empty").map(d => d.letter));
+  const high = letters.filter(l => l > "P");
+  if (high.length && !await ask({ title: "Drive letters after P:",
+        text: "Drive " + high.join(":, ") + ": works with MiNT, MagiC and EmuTOS. The original TOS only knows A: to P:.",
+        ok: "Save anyway" })) return;
+  if (JSON.stringify(cfg.network) !== JSON.stringify(JSON.parse(saved).network) &&
+      !await ask({ title: "Change the Wi-Fi settings?", atari: true,
+        text: "TheHulk connects again with the new settings: the connection drops and this page may lose TheHulk.",
+        ok: "Save" })) return;
+  $("save").disabled = true;
+  try {
+    const r = await api("PUT", "/api/v1/settings", cfg);
+    message("ok", "Saved. Active after the next reset of the Atari." +
+            (r.network_changed ? " TheHulk now connects with the new Wi-Fi settings." : ""));
+    await loadSettings();
+  } catch (e) {
+    message("err", e.message);
+  }
+  $("save").disabled = false;
+};
+
+// ---------- Networks nearby ----------
+$("scan").onclick = async () => {
+  $("scan").disabled = true; $("scanstate").textContent = "Searching…"; $("nets").innerHTML = "";
+  try {
+    const r = await api("GET", "/api/v1/setup/scan", undefined, 20000);
+    $("scanstate").textContent = r.networks.length ? "Click one to use it:" : "No networks found.";
+    r.networks.forEach(n => {
+      const li = document.createElement("li");
+      li.style.cursor = "pointer";
+      li.innerHTML = '<span class="slotno"></span><span class="slotname">' + esc(n.ssid) + '</span>' +
+                     '<span class="muted small">' + (n.open ? "open · " : "") + n.rssi + ' dBm</span>';
+      li.onclick = () => { $("s-ssid").value = n.ssid; $("s-pw").value = ""; $("s-pw").focus(); markDirty(); };
+      $("nets").appendChild(li);
+    });
+  } catch (e) { $("scanstate").textContent = "Search failed."; }
+  $("scan").disabled = false;
+};
+
+// ---------- Drives ----------
+function renderDrives() {
+  const ul = $("drives");
+  ul.innerHTML = "";
+  cfg.drives.forEach((d, i) => {
+    const li = document.createElement("li");
+    if (d.state === "empty") {
+      li.className = "free";
+      li.innerHTML = '<span class="slotno">' + (i + 1) + '</span><span>empty</span>' +
+                     '<span class="actions"><button class="secondary" data-i="' + i + '">Add</button></span>';
+    } else {
+      li.className = d.state === "disabled" ? "disabled" : "";
+      const where = d.type === "tnfs" ? "TNFS " + esc(d.host) + ":" + d.port + " " + esc(d.mount) : "SD card " + esc(d.sd_path);
+      li.innerHTML = '<span class="slotno">' + esc(d.letter) + ':</span><span><span class="slotname">' + esc(d.name) +
+                     '</span> ' + (d.state === "disabled" ? '<span class="badge off">inactive</span>' : '') +
+                     '<br><span class="muted small">' + where + '</span></span>' +
+                     '<span class="actions"><label class="toggle" title="Active (saved at once)">' +
+                     '<input type="checkbox" data-t="' + i + '"' + (d.state === "enabled" ? " checked" : "") +
+                     '><span></span></label><button class="secondary" data-i="' + i + '">Edit</button></span>';
+    }
+    ul.appendChild(li);
+  });
+  ul.querySelectorAll("button").forEach(b => b.onclick = () => editDrive(+b.dataset.i));
+  ul.querySelectorAll("input[data-t]").forEach(t => t.onchange = () => toggleDrive(+t.dataset.t, t));
+}
+// Active or not, saved at once: only this drive, on top of what is saved (not the rest of
+// the form, which may hold changes that are not saved yet)
+async function toggleDrive(i, box) {
+  const state = box.checked ? "enabled" : "disabled";
+  const base = JSON.parse(saved);
+  if (base.drives[i].state === "empty") { box.checked = !box.checked; return; }
+  base.drives[i].state = state;
+  box.disabled = true;
+  try {
+    await api("PUT", "/api/v1/settings", { drives: base.drives });
+    saved = JSON.stringify(base);
+    cfg.drives[i].state = state;
+    renderDrives(); markDirty();
+    message("ok", "Drive " + base.drives[i].letter + ": " + (box.checked ? "active" : "inactive") +
+            ". Active after the next reset of the Atari.");
+  } catch (e) {
+    box.checked = !box.checked; box.disabled = false;
+    message("err", e.message);
+  }
+}
+function freeLetter() {
+  const used = new Set([cfg.flash_letter].concat(cfg.drives.filter(d => d.state !== "empty").map(d => d.letter)));
+  for (let c = 67; c <= 80; c++) if (!used.has(String.fromCharCode(c))) return String.fromCharCode(c);
+  return "";
+}
+function editDrive(i) {
+  editing = i;
+  const d = cfg.drives[i].state === "empty"
+    ? { state: "enabled", letter: freeLetter(), type: "sd", name: "", sd_path: "/HD", host: "", port: 16384, mount: "/" }
+    : Object.assign({}, cfg.drives[i]);
+  if (!d.port) d.port = 16384;            // an SD drive has none
+  const box = $("driveedit");
+  box.innerHTML =
+    '<h3>Slot ' + (i + 1) + '</h3><div class="form">' +
+    '<label>Letter</label><input type="text" id="d-letter" class="letter" maxlength="1" value="' + esc(d.letter) + '">' +
+    '<label>Name</label><input type="text" id="d-name" maxlength="23" value="' + esc(d.name) + '">' +
+    '<label>Type</label><select id="d-type"><option value="sd">SD card</option><option value="tnfs">TNFS (network)</option></select>' +
+    '<label class="sd">Folder on the card</label><input type="text" id="d-path" class="sd" maxlength="63" value="' + esc(d.sd_path) + '">' +
+    '<label class="tnfs">Server</label><input type="text" id="d-host" class="tnfs" maxlength="63" value="' + esc(d.host) + '">' +
+    '<label class="tnfs">Port</label><input type="number" id="d-port" class="tnfs" min="1" max="65535" value="' + d.port + '">' +
+    '<label class="tnfs">Share</label><input type="text" id="d-mount" class="tnfs" maxlength="31" value="' + esc(d.mount) + '">' +
+    '<label>Active</label><select id="d-state"><option value="enabled">Yes</option><option value="disabled">No</option></select>' +
+    '</div><div id="d-msg" class="banner hidden" style="margin-top:10px"></div>' +
+    '<div class="row" style="margin-top:12px;justify-content:flex-end">' +
+    (cfg.drives[i].state !== "empty" ? '<button class="danger" id="d-del">Remove</button>' : '') +
+    '<button class="secondary" id="d-cancel">Cancel</button><button id="d-ok">OK</button></div>';
+  $("d-type").value = d.type; $("d-state").value = d.state;
+  letterField($("d-letter"));
+  const types = () => { const t = $("d-type").value;
+    box.querySelectorAll(".sd").forEach(e => show(e, t === "sd")); box.querySelectorAll(".tnfs").forEach(e => show(e, t === "tnfs")); };
+  $("d-type").onchange = types; types();
+  show(box, true);
+  box.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  $("d-cancel").onclick = () => { show(box, false); editing = -1; };
+  if ($("d-del")) $("d-del").onclick = async () => {
+    if (!await ask({ title: "Remove this drive?", text: "The drive is removed when you save.", ok: "Remove", danger: true })) return;
+    cfg.drives[i] = { state: "empty" }; show(box, false); renderDrives(); markDirty();
+  };
+  $("d-ok").onclick = () => okDrive(i);
+}
+function driveMsg(kind, text) { const m = $("d-msg"); m.className = "banner " + kind; m.textContent = text; show(m, !!text); }
+async function okDrive(i) {
+  const d = {
+    state: $("d-state").value, letter: $("d-letter").value.toUpperCase(), type: $("d-type").value,
+    name: $("d-name").value.trim(), sd_path: $("d-path").value.trim(), host: $("d-host").value.trim(),
+    port: +$("d-port").value, mount: $("d-mount").value.trim()
+  };
+  if (!/^[C-Z]$/.test(d.letter)) return driveMsg("err", "Choose a letter from C to Z.");
+  if (d.letter === cfg.flash_letter) return driveMsg("err", "Drive " + d.letter + ": is the flash drive.");
+  const other = cfg.drives.findIndex((x, j) => j !== i && x.state !== "empty" && x.letter === d.letter);
+  if (other >= 0) return driveMsg("err", "Drive letter " + d.letter + ": is already used by slot " + (other + 1) + ".");
+  if (!d.name) return driveMsg("err", "Give the drive a name.");
+  if (d.type === "sd" && !d.sd_path) return driveMsg("err", "The folder on the card is empty.");
+  if (d.type === "tnfs" && !d.host) return driveMsg("err", "The server is empty.");
+  if (d.type === "tnfs" && !(d.port >= 1 && d.port <= 65535)) return driveMsg("err", "The port must be 1 to 65535.");
+  if (d.letter > "P" && !await ask({ title: "Use drive " + d.letter + ":?", text: letterWarning(d.letter).trim(), ok: "Use " + d.letter + ":" })) return;
+  if (d.type === "sd") {
+    try {
+      const r = await api("POST", "/api/v1/sd-folder", { path: d.sd_path, create: false });
+      if (r.status === "is_file") return driveMsg("err", d.sd_path + " is a file on the SD card, not a folder.");
+      if (r.status === "missing") {
+        if (await ask({ title: "Folder not on the SD card",
+                        text: "The folder " + d.sd_path + " is not on the SD card. Create it?\n\nKeep the path to use it with another card.",
+                        ok: "Create it", cancel: "Keep the path" })) {
+          const c = await api("POST", "/api/v1/sd-folder", { path: d.sd_path, create: true });
+          if (c.status !== "created" && c.status !== "there")
+            return driveMsg("err", "Could not create " + d.sd_path + " on the SD card. Folder names are 8.3.");
+        }
+      }
+      if (r.status === "no_card" && !await ask({ title: "No SD card",
+            text: "There is no SD card in TheHulk: the folder cannot be checked. Keep it?", ok: "Keep it" })) return;
+    } catch (e) { /* not checked */ }
+  }
+  cfg.drives[i] = d;
+  show($("driveedit"), false); editing = -1;
+  renderDrives(); markDirty();
+}
+
+route();
+poll();
+</script>
+</body>
+</html>
