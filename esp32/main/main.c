@@ -133,7 +133,9 @@ static void handle_packets(void)
         sd_unlock();
         shadow_sync();
 #if HULK_GEMDRIVE_NO_INSTALL
-        if (!shadow_is_synced())
+        // Comparing all 128 KB takes ~8.5 ms: not for the network commands (dozens a
+        // second, and they only write their own area)
+        if ((pkt.cmd & 0xFFF0) != 0x0620 && !shadow_is_synced())
             ESP_LOGE(TAG, "command 0x%04x changed the shadow outside the synced areas", pkt.cmd);
 #endif
 #endif
