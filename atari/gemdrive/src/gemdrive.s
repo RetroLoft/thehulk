@@ -1989,7 +1989,7 @@ _notlong:
     bsr find_drive_slot_by_letter        ; d0 = slot index, or -1 if not one of the emulated drives
     tst.w d0
     bpl.s .fs_first_emulated             ; If found, execute specific fsfirst emulated code
-    bra .exec_old_handler              ; Now it's safe to execute the old handler
+    bra .fs_first_not_emulated           ; TOS searches: forget our search on this DTA first
 ; We need to clean the DTA to avoid issues with previous DTAs used in the emulated code
 ;    reentry_gem_lock
 ;    gemdos Fgetdta, 2                    ; Call Fgetdta() and get the address of the DTA
@@ -2005,7 +2005,19 @@ _notlong:
 ;    send_sync CMD_DTA_RELEASE_CALL, 4    ; Send the command to the Sidecart. 4 bytes of payload
 
 .fs_first_check_drive:
-    detect_emulated_drive                ; If not, exec_old_handler the code. Otherwise continue with the code
+    gemdos Dgetdrv, 2                    ; The current drive
+    bsr find_drive_slot_by_number        ; d0 = slot index, or -1 if not one of the emulated drives
+    tst.w d0
+    bpl.s .fs_first_emulated
+    ; TheHulk: a search by TOS on this DTA. The ESP32 may still hold one of ours on the
+    ; same DTA (the desktop uses one DTA for every window): then Fsnext would ask the ESP32
+    ; and get "no more files", and the window of a hard disk partition shows only its first
+    ; entry. So that search is released before TOS gets the call.
+.fs_first_not_emulated:
+    gemdos Fgetdta, 2                    ; The DTA TOS will fill
+    move.l d0, d3
+    send_sync CMD_DTA_RELEASE_CALL, 4
+    bra .exec_old_handler
 
 ;    bra .exec_old_handler                ; Now it's safe to execute the old handler
 
