@@ -41,5 +41,7 @@ which only knows A: to P:".
 A suggestion with a hard disk of six partitions (`C:` to `H:`): the flash drive at `I:`, the
 SD card and TNFS drives at `J:` to `P:`.
 
-On an ST without hard disk you can give the flash drive the letter `C:`. Starting the
-Atari from it (AUTO folder, `DESKTOP.INF`) is not tested yet.
+On an ST without hard disk you can give the flash drive the letter `C:`: the Atari then
+starts from it, with its AUTO folder and the desktop saved there (tested on a Falcon).
+With a hard disk, the flash drive at `C:` takes the place of the hard disk's `C:`, which
+can then not be reached.
