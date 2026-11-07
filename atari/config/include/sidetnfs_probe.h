@@ -158,6 +158,16 @@ int sidetnfs_probe_get_config_info(SideTnfsConfigInfo *info);
 int sidetnfs_probe_get_drive(unsigned long index, SideTnfsDriveInfo *info);
 int sidetnfs_probe_set_drive(unsigned long index, const SideTnfsDriveInfo *in, unsigned long *out_status);
 int sidetnfs_probe_delete_drive(unsigned long index, unsigned long *out_status);
+
+/* TheHulk: is the folder of an SD drive on the card (create = 0), or make
+ * it (create = 1). *out_status: SD_FOLDER_* */
+#define SD_FOLDER_THERE      0UL
+#define SD_FOLDER_MISSING    1UL
+#define SD_FOLDER_NO_CARD    2UL
+#define SD_FOLDER_CREATED    3UL
+#define SD_FOLDER_FAILED     4UL
+#define SD_FOLDER_IS_FILE    5UL
+int sidetnfs_probe_sd_folder(const char *sd_path, int create, unsigned long *out_status);
 int sidetnfs_probe_set_config_drive(unsigned long letter, unsigned long *out_status);
 int sidetnfs_probe_save_config(unsigned long *out_status);
 

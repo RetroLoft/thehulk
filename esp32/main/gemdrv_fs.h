@@ -20,6 +20,16 @@ void fs_reset(void);
 // The card is gone: its open files and searches are forgotten
 void fs_sd_removed(void);
 
+// A folder on the card for an SD drive ("/HD", "\\GAMES\\ST"): FS_SD_FOLDER_* below.
+// create: make it (and the folders above it) when it is not there.
+#define FS_SD_FOLDER_THERE      0
+#define FS_SD_FOLDER_MISSING    1
+#define FS_SD_FOLDER_NO_CARD    2
+#define FS_SD_FOLDER_CREATED    3
+#define FS_SD_FOLDER_FAILED     4   // not created: a name that is not 8.3, the card is full, ...
+#define FS_SD_FOLDER_IS_FILE    5
+int fs_sd_folder(const char *sd_path, bool create);
+
 // The DTA is filled in the Atari's byte order (dta[0] is the byte at the DTA address)
 int16_t fs_fsfirst(int slot, uint32_t dta, const char *path, uint16_t attribs, uint8_t *dta_out);
 int16_t fs_fsnext(uint32_t dta, uint8_t *dta_out);

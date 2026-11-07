@@ -13,6 +13,7 @@
 #include "atari_charset.h"
 #include "ff.h"
 #include "flashfs.h"
+#include "esp_log.h"
 #include "gemdrv_fs.h"
 #include "gemdrv_layout.h"
 #include "sd.h"
@@ -213,6 +214,53 @@ void fs_sd_removed(void)
     for (int i = 0; i < FS_MAX_SLOTS; i++)
         if (slot_is_sd(i))
             s_cwds[i][0] = 0;
+}
+
+static const char *TAG = "fs";
+
+int fs_sd_folder(const char *sd_path, bool create)
+{
+    if (!sd_ready())
+        return FS_SD_FOLDER_NO_CARD;
+    char fat[MAX_PATH];
+    size_t n = snprintf(fat, sizeof(fat), "0:/");
+    for (const char *p = sd_path; *p && n + 1 < sizeof(fat); p++) {
+        char c = *p == '\\' ? '/' : (char)toupper((unsigned char)*p);
+        if (c == '/' && fat[n - 1] == '/')
+            continue;
+        fat[n++] = c;
+    }
+    while (n > 3 && fat[n - 1] == '/')
+        n--;
+    fat[n] = 0;
+    if (n == 3)
+        return FS_SD_FOLDER_THERE;      // the root of the card
+    FILINFO fno;
+    FRESULT fr = f_stat(fat, &fno);
+    if (fr == FR_OK)
+        return fno.fattrib & AM_DIR ? FS_SD_FOLDER_THERE : FS_SD_FOLDER_IS_FILE;
+    if (!create)
+        return FS_SD_FOLDER_MISSING;
+    // Each folder on the way, then the last one
+    for (char *slash = strchr(fat + 3, '/'); ; slash = strchr(slash + 1, '/')) {
+        if (slash)
+            *slash = 0;
+        fr = f_stat(fat, &fno);
+        if (fr != FR_OK)
+            fr = f_mkdir(fat);
+        else if (!(fno.fattrib & AM_DIR))
+            fr = FR_EXIST;
+        if (slash)
+            *slash = '/';
+        if (fr != FR_OK) {
+            ESP_LOGW(TAG, "creating %s: FatFs error %d", fat, fr);
+            return FS_SD_FOLDER_FAILED;
+        }
+        if (!slash)
+            break;
+    }
+    ESP_LOGI(TAG, "created %s", fat);
+    return FS_SD_FOLDER_CREATED;
 }
 
 // --- Paths --------------------------------------------------------------------------

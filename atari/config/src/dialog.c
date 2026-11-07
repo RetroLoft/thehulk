@@ -689,6 +689,51 @@ static int letter_ok_for_tos(char letter)
 }
 
 /* ================================================================== */
+/* SD drives: the folder on the card. Asks to create it when it is not */
+/* there. 1: go on with OK, 0: stay in the editor.                     */
+/* ================================================================== */
+static int sd_folder_ok(const char *sd_path)
+{
+#ifdef DEMO_MODE
+    (void)sd_path;
+    return 1;
+#else
+    unsigned long status;
+    char msg[200];
+    if (sidetnfs_probe_sd_folder(sd_path, 0, &status) != SIDETNFS_PROBE_OK)
+        return 1;                       /* older firmware: not checked */
+    switch (status) {
+    case SD_FOLDER_THERE:
+        return 1;
+    case SD_FOLDER_NO_CARD:
+        return form_alert(1, "[1][There is no SD card in TheHulk:|the folder cannot be checked.][Keep|Cancel]") == 1;
+    case SD_FOLDER_IS_FILE:
+        sprintf(msg, "[3][%.30s|is a file on the SD card,|not a folder.][Cancel]", sd_path);
+        form_alert(1, msg);
+        return 0;
+    case SD_FOLDER_MISSING:
+        sprintf(msg, "[2][This folder is not on the|SD card:|%.30s|Create it?][Create|Keep|Cancel]", sd_path);
+        switch (form_alert(1, msg)) {
+        case 1:
+            if (sidetnfs_probe_sd_folder(sd_path, 1, &status) != SIDETNFS_PROBE_OK ||
+                (status != SD_FOLDER_CREATED && status != SD_FOLDER_THERE)) {
+                sprintf(msg, "[3][Could not create|%.30s on the SD card.|Folder names are 8.3.][Cancel]", sd_path);
+                form_alert(1, msg);
+                return 0;
+            }
+            return 1;
+        case 2:
+            return 1;
+        default:
+            return 0;
+        }
+    default:
+        return 1;
+    }
+#endif
+}
+
+/* ================================================================== */
 /* Shared drive validation -- used both by each editor's Test/OK and by */
 /* Save's full-list check. msg must be at least 100 bytes.             */
 /* ================================================================== */
@@ -1879,6 +1924,8 @@ static int sd_editor_run(DriveConfig *cfg, int index)
                 break;
             }
             if (!letter_ok_for_tos(working.letter))
+                break;
+            if (!sd_folder_ok(working.sd_path))
                 break;
             cfg->drives[index] = working;
             done = 1;
