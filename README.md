@@ -9,11 +9,13 @@ built around an ESP32-S3 and a Lattice iCE40UP5K FPGA. Successor of SideTNFS.
 |---|---|
 | `hardware/v2/` | KiCad project and JLCPCB production files |
 | `fpga/` | FPGA gateware (Verilog), pin constraints, simulation |
-| `esp32/` | ESP32-S3 firmware (ESP-IDF); embeds the bitstream and GEMDRIVE |
+| `esp32/` | ESP32-S3 firmware (ESP-IDF); embeds the bitstream, GEMDRIVE and the files of S: |
 | `atari/gemdrive/` | GEMDRIVE: the cartridge code the Atari runs (68000 assembly) |
 | `atari/config/` | Configuration program for the Atari (GEM, C) |
+| `atari/sting/` | `CART_NET.STX`: STinG driver for TheHulk's network bridge (C) |
+| `atari/stingins/` | `STINGINS.TOS`: STinG installer on drive S:, see [docs/NETWORK.md](docs/NETWORK.md) |
 | `tools/` | Development helpers |
-| `docs/` | Documentation, see [docs/hardware-v2.md](docs/hardware-v2.md) |
+| `docs/` | Documentation: [hardware](docs/hardware-v2.md), [internet with STinG](docs/NETWORK.md) |
 
 ## Building
 
@@ -27,7 +29,8 @@ Requirements:
 - FPGA: yosys, nextpnr-ice40 and icepack. `build.sh` installs the YoWASP builds from PyPI in
   `.venv-fpga` when no native tools are found.
 - GEMDRIVE: `stcmd` from atarist-toolkit-docker (Docker image `logronoide/atarist-toolkit-docker`).
-- Configuration program: `m68k-atari-mint-gcc` with gemlib.
+- Configuration program: `m68k-atari-mint-gcc` with gemlib. STinG driver and installer:
+  `m68k-atari-mint-gcc`.
 - ESP32: ESP-IDF 5.5 in `~/esp/esp-idf` (or set `IDF_PATH`).
 
 ## How it works

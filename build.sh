@@ -3,7 +3,8 @@
 #   1. fpga/            gateware (yosys, nextpnr-ice40, icepack)
 #   2. atari/gemdrive/  GEMDRIVE cartridge image (stcmd / atarist-toolkit-docker)
 #   3. atari/config/    configuration program (m68k-atari-mint-gcc + gemlib)
-#   4. esp32/           ESP32-S3 firmware (ESP-IDF), embeds 1 and 2
+#      atari/stingins/  STinG installer with CART_NET.STX (m68k-atari-mint-gcc)
+#   4. esp32/           ESP32-S3 firmware (ESP-IDF), embeds 1, 2 and 3
 #
 #   ./build.sh                 build everything
 #   ./build.sh flash [PORT]    build, flash the ESP32 and open the serial monitor
@@ -25,6 +26,7 @@ fi
 make -C "$ROOT/fpga"
 (cd "$ROOT/atari/gemdrive" && ./build.sh "$(pwd)" release)
 make -C "$ROOT/atari/config"
+make -C "$ROOT/atari/stingins"
 
 : "${IDF_PATH:=$HOME/esp/esp-idf}"
 # shellcheck disable=SC1091

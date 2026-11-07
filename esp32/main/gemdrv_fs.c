@@ -40,6 +40,8 @@ static bool s_is_tnfs[FS_MAX_SLOTS];
 // The flash drive: one folder, read-only
 extern const uint8_t thehulk_prg_start[] asm("_binary_THEHULK_PRG_start");
 extern const uint8_t thehulk_prg_end[]   asm("_binary_THEHULK_PRG_end");
+extern const uint8_t stingins_tos_start[] asm("_binary_STINGINS_TOS_start");
+extern const uint8_t stingins_tos_end[]   asm("_binary_STINGINS_TOS_end");
 #define FLASH_TIME  (12 << 11)
 #define FLASH_DATE  (((2026 - 1980) << 9) | (11 << 5) | 2)
 
@@ -48,12 +50,14 @@ typedef struct {
     const uint8_t *data;
     uint32_t size;
 } flash_file_t;
-static flash_file_t s_flash[1];
+static flash_file_t s_flash[2];
 
 static void flash_files_init(void)
 {
     s_flash[0] = (flash_file_t){ "THEHULK.PRG", thehulk_prg_start,
                                  (uint32_t)(thehulk_prg_end - thehulk_prg_start) };
+    s_flash[1] = (flash_file_t){ "STINGINS.TOS", stingins_tos_start,      // STinG installer
+                                 (uint32_t)(stingins_tos_end - stingins_tos_start) };
 }
 
 typedef struct {

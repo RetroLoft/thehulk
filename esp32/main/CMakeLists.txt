@@ -16,6 +16,13 @@ if(NOT EXISTS "${HULK_CONFIG_PRG}")
 endif()
 target_add_binary_data(${COMPONENT_TARGET} "${HULK_CONFIG_PRG}" BINARY)
 
+# The STinG installer on the flash drive, built by ../atari/stingins (make)
+set(HULK_STINGINS "${CMAKE_CURRENT_LIST_DIR}/../../atari/stingins/STINGINS.TOS")
+if(NOT EXISTS "${HULK_STINGINS}")
+    message(FATAL_ERROR "STinG installer not found: ${HULK_STINGINS}\nRun make in atari/stingins first.")
+endif()
+target_add_binary_data(${COMPONENT_TARGET} "${HULK_STINGINS}" BINARY)
+
 # Cartridge image: GEMDRIVE, built by ../atari/gemdrive. Override with -DHULK_ROM_IMAGE=<file>.
 set(HULK_ROM_IMAGE "${CMAKE_CURRENT_LIST_DIR}/../../atari/gemdrive/dist/GEMDRIVE.BIN" CACHE FILEPATH "Cartridge image")
 if(NOT EXISTS "${HULK_ROM_IMAGE}")
