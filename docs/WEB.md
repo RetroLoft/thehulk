@@ -17,7 +17,8 @@ There is no password. The page is meant for a private home network.
   firmware version (from `version.txt`).
 - **Mode**: switches the cartridge on or off, like a short press on button 1 (see
   [The cartridge switched off](#the-cartridge-switched-off)). **Cartridges...** opens the
-  [cartridge emulator](CARTRIDGE.md). The floppy emulator follows later.
+  [cartridge emulator](CARTRIDGE.md), **Floppies...** the [floppy emulator](FLOPPY.md). Both
+  need an SD card.
 
 **Settings** (the gear at the top right)
 - **Device name**: tells several cartridges apart. The name is used:
@@ -119,7 +120,7 @@ Then the states:
 
 | Colour | State | Alone |
 |---|---|---|
-| green | the [cartridge emulator](CARTRIDGE.md) is in use | blinks |
+| green | the [cartridge](CARTRIDGE.md) or [floppy](FLOPPY.md) emulator is in use | blinks |
 | white | AP mode | blinks |
 | yellow | the cartridge is switched off | stays on |
 | blue | no Wi-Fi (yet) | blinks |
@@ -131,8 +132,8 @@ cartridge off). With no state active, the LED is off.
 ## The cartridge switched off
 
 A short press on button 1 (under 1.5 s), the page, or the console keys `d` and `e` switch
-the cartridge off and on. While the cartridge emulator is in use, the short press on button 1
-goes back to GEMDRIVE instead.
+the cartridge off and on. While the cartridge or floppy emulator is in use, the short press
+on button 1 goes back to GEMDRIVE instead.
 
 When it is off:
 - From the next reset, GEMDRIVE does not install itself.
@@ -149,7 +150,7 @@ comes back as `{"error": "<CODE>", "message": "<text>"}`.
 
 | Call | What it does |
 |---|---|
-| `GET /api/v1/status` | name, hostname, version, `wifi` {ssid, ip, rssi, setup, setup_ssid, via_setup}, atari_on, `update` {available, latest}, `cartridge` {on, emulator, image, busy, running, load_failed, error} |
+| `GET /api/v1/status` | name, hostname, version, `wifi` {ssid, ip, rssi, setup, setup_ssid, via_setup}, atari_on, `update` {available, latest}, `cartridge` {on, emulator, image, busy, running, load_failed, error}, `floppy` {on, image, drive, drives, busy, installed, ready, error} |
 | `PUT /api/v1/cartridge` | `{"on": true}` or `false` |
 | `GET /api/v1/settings` | name, hostname, flash_letter, `drives` [{state: enabled/disabled/empty, letter, type: sd/tnfs, name, sd_path, host, port, mount}], `network` {ssid, password_set, auth_mode, dhcp, ip, netmask, gateway, dns, country}, `clock` {enabled, ntp_server, utc_offset} |
 | `PUT /api/v1/settings` | the same object. Everything is checked first, and an error changes nothing. `network.password` only when it changes, `network.clear_password` to remove it. |
@@ -159,12 +160,16 @@ comes back as `{"error": "<CODE>", "message": "<text>"}`.
 | `PUT /api/v1/setup/wifi` | `{"ssid": "...", "password": "..."}`: only the network and password |
 | `POST /api/v1/setup/start` | AP mode on |
 | `POST /api/v1/setup/leave` | AP mode off |
-| `PUT /api/v1/mode` | `{"mode": "gemdrive"}` or `{"mode": "emulator", "image": "XENON.STC"}`; the status shows `busy` until it is in the cartridge |
+| `PUT /api/v1/mode` | `{"mode": "gemdrive"}`, `{"mode": "emulator", "image": "XENON.STC"}` or `{"mode": "floppy", "image": "GAME.ST", "drive": "A", "drives": false}`; the status shows `busy` until it is done |
 | `GET /api/v1/carts` | emulator, image, card, `files` [{name, size, kind: normal/diagnostic/unknown/bad}] |
 | `POST /api/v1/carts/upload?name=X.STC` | the file as the body, `Content-Type: application/octet-stream` |
 | `DELETE /api/v1/carts?name=X.STC` | removes an image from the card |
 | `PUT /api/v1/carts/rename` | `{"from": "A.STC", "to": "B.STC"}` |
 | `GET /api/v1/carts/catalog` | the list of roms.sidecartridge.com |
 | `POST /api/v1/carts/download` | `{"url": "http://roms.sidecartridge.com/...", "name": "X.STC"}`; only from that site |
+| `GET /api/v1/floppies` | on, image, card, `files` [{name, size, kind: st/msa/bad}] |
+| `POST /api/v1/floppies/upload?name=X.ST` | the file as the body, `Content-Type: application/octet-stream` |
+| `DELETE /api/v1/floppies?name=X.ST` | removes an image from the card |
+| `PUT /api/v1/floppies/rename` | `{"from": "A.ST", "to": "B.ST"}` |
 
 Through the own network, any other address is redirected to http://192.168.4.1/.

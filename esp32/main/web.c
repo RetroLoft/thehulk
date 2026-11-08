@@ -13,7 +13,9 @@
 #include "lwip/sockets.h"
 #include "cart.h"
 #include "console.h"
+#include "floppy.h"
 #include "fpga.h"
+#include "gemdrv.h"
 #include "gemdrv_fs.h"
 #include "sd.h"
 #include "settings.h"
@@ -188,6 +190,17 @@ static esp_err_t get_status(httpd_req_t *req)
     cJSON_AddBoolToObject(cart, "load_failed", cart_load_failed());
     int job = cart_select_busy() ? 0 : cart_select_result();
     cJSON_AddStringToObject(cart, "error", job ? cart_error(job) : "");
+    cJSON *flop = cJSON_AddObjectToObject(root, "floppy");
+    cJSON_AddBoolToObject(flop, "on", floppy_emulator_on());
+    cJSON_AddStringToObject(flop, "image", floppy_active_name());
+    cJSON_AddStringToObject(flop, "drive", floppy_drive() ? "B" : "A");
+    cJSON_AddBoolToObject(flop, "drives", floppy_keep_drives());
+    // busy: on its way into memory; installed: the Atari has the hooks, a new image needs no reset
+    cJSON_AddBoolToObject(flop, "busy", floppy_select_busy() || (fpga_power_present() && floppy_change_pending()));
+    cJSON_AddBoolToObject(flop, "installed", fpga_power_present() && gemdrv_floppy_installed());
+    cJSON_AddBoolToObject(flop, "ready", floppy_image() != NULL);
+    int fjob = floppy_select_busy() ? 0 : floppy_select_result();
+    cJSON_AddStringToObject(flop, "error", fjob ? floppy_error(fjob) : "");
     return send_json(req, "200 OK", root);
 }
 
@@ -543,26 +556,51 @@ static esp_err_t get_carts(httpd_req_t *req)
     return send_json(req, "200 OK", root);
 }
 
-// {"mode": "gemdrive"} or {"mode": "emulator", "image": "XENON.STC"}
+static esp_err_t send_floppy_error(httpd_req_t *req, int e)
+{
+    const char *status = e == FLOPPY_E_NO_CARD ? "409 Conflict" : e == FLOPPY_E_NOT_FOUND ? "404 Not Found" :
+                         e == FLOPPY_E_EXISTS || e == FLOPPY_E_BUSY ? "409 Conflict" :
+                         e == FLOPPY_E_IO || e == FLOPPY_E_MEMORY ? "500 Internal Server Error" :
+                         "422 Unprocessable Entity";
+    return send_error(req, status, "FLOPPY", floppy_error(e));
+}
+
+// {"mode": "gemdrive"}, {"mode": "emulator", "image": "XENON.STC"} or
+// {"mode": "floppy", "image": "GAME.ST", "drive": "A", "drives": false}
 static esp_err_t put_mode(httpd_req_t *req)
 {
     cJSON *root = read_json(req);
     if (!root)
         return ESP_OK;
-    char mode[16], image[CART_NAME_LEN + 4];
+    char mode[16], image[CART_NAME_LEN + 4], drive[4];
     copy_str(mode, sizeof(mode), str_of(root, "mode", ""));
     copy_str(image, sizeof(image), str_of(root, "image", ""));
+    copy_str(drive, sizeof(drive), str_of(root, "drive", "A"));
+    int keep = bool_of(root, "drives", 0);
     cJSON_Delete(root);
-    int r;
+    if (!strcmp(mode, "floppy")) {
+        int f = floppy_select_start(image, drive[0] == 'B', keep > 0);
+        if (f)
+            return send_floppy_error(req, f);
+        if (settings_cart_off())
+            console_set_cart_off(false);    // a floppy is chosen: the Atari has to see the cartridge
+        ESP_LOGI(TAG, "mode from the web page: floppy %s in %c:", image, drive[0] == 'B' ? 'B' : 'A');
+        return send_ok(req);
+    }
+    int r = 0;
     if (!strcmp(mode, "gemdrive")) {
-        r = cart_select(NULL);
-        if (!r)
-            cart_apply_now();
+        if (floppy_emulator_on())
+            floppy_off();               // the cartridge is GEMDRIVE already, nothing to load
+        if (cart_emulator_on()) {
+            r = cart_select(NULL);
+            if (!r)
+                cart_apply_now();
+        }
     }
     else if (!strcmp(mode, "emulator"))
         r = cart_select_start(image);   // status tells when it is in the cartridge
     else
-        return send_error(req, "422 Unprocessable Entity", "INVALID_SETTING", "Mode: gemdrive or emulator.");
+        return send_error(req, "422 Unprocessable Entity", "INVALID_SETTING", "Mode: gemdrive, emulator or floppy.");
     if (r)
         return send_cart_error(req, r);
     if (settings_cart_off())
@@ -578,33 +616,51 @@ static bool query_name(httpd_req_t *req, char *out, size_t size)
            httpd_query_key_value(q, "name", out, size) == ESP_OK;
 }
 
+// A body sent as a file: as read_json, never from a foreign page
+static bool upload_type_ok(httpd_req_t *req)
+{
+    char type[48] = "";
+    httpd_req_get_hdr_value_str(req, "Content-Type", type, sizeof(type));
+    return !strcmp(type, "application/octet-stream");
+}
+
+static esp_err_t send_upload_type_error(httpd_req_t *req)
+{
+    return send_error(req, "415 Unsupported Media Type", "UNSUPPORTED_MEDIA_TYPE", "Send application/octet-stream.");
+}
+
+// The body to 'write' in parts; 0 or its error, *got: the bytes received
+static int receive_body(httpd_req_t *req, int (*write)(const void *, size_t), size_t *got)
+{
+    int r = 0;
+    char *buf = malloc(4096);
+    *got = 0;
+    while (!r && buf && *got < req->content_len) {
+        int n = httpd_req_recv(req, buf, 4096);
+        if (n == HTTPD_SOCK_ERR_TIMEOUT)
+            continue;
+        if (n <= 0)
+            return free(buf), -6;       // CART_E_IO and FLOPPY_E_IO
+        r = write(buf, n);
+        *got += n;
+    }
+    free(buf);
+    return r;
+}
+
 // The file itself as the body (application/octet-stream), ?name=XENON.STC
 static esp_err_t post_cart_upload(httpd_req_t *req)
 {
-    char type[48] = "", name[CART_NAME_LEN + 4];
-    httpd_req_get_hdr_value_str(req, "Content-Type", type, sizeof(type));
-    if (strcmp(type, "application/octet-stream"))   // as read_json: never from a foreign page
-        return send_error(req, "415 Unsupported Media Type", "UNSUPPORTED_MEDIA_TYPE",
-                          "Send application/octet-stream.");
+    char name[CART_NAME_LEN + 4];
+    if (!upload_type_ok(req))
+        return send_upload_type_error(req);
     if (!query_name(req, name, sizeof(name)))
         return send_cart_error(req, CART_E_NAME);
     int r = cart_create(name, req->content_len);
     if (r)
         return send_cart_error(req, r);
-    char *buf = malloc(4096);
-    size_t got = 0;
-    while (!r && buf && got < req->content_len) {
-        int n = httpd_req_recv(req, buf, 4096);
-        if (n == HTTPD_SOCK_ERR_TIMEOUT)
-            continue;
-        if (n <= 0) {
-            r = CART_E_IO;
-            break;
-        }
-        r = cart_write(buf, n);
-        got += n;
-    }
-    free(buf);
+    size_t got;
+    r = receive_body(req, cart_write, &got);
     int c = cart_close(!r && got == req->content_len);
     if (!r)
         r = c;
@@ -628,6 +684,69 @@ static esp_err_t put_cart_rename(httpd_req_t *req)
     int r = cart_rename(str_of(root, "from", ""), str_of(root, "to", ""));
     cJSON_Delete(root);
     return r ? send_cart_error(req, r) : send_ok(req);
+}
+
+// --- Floppy emulator (floppy.c) -------------------------------------------------------
+
+#define MAX_FLOPPIES  200
+
+static esp_err_t get_floppies(httpd_req_t *req)
+{
+    floppy_file_t *files = malloc(MAX_FLOPPIES * sizeof(floppy_file_t));
+    if (!files)
+        return send_error(req, "500 Internal Server Error", "NO_MEMORY", "Out of memory.");
+    int n = floppy_list(files, MAX_FLOPPIES);
+    cJSON *root = cJSON_CreateObject();
+    cJSON_AddBoolToObject(root, "on", floppy_emulator_on());
+    cJSON_AddStringToObject(root, "image", floppy_active_name());
+    cJSON_AddBoolToObject(root, "card", n >= 0);
+    cJSON *list = cJSON_AddArrayToObject(root, "files");
+    for (int i = 0; i < n; i++) {
+        cJSON *o = cJSON_CreateObject();
+        cJSON_AddStringToObject(o, "name", files[i].name);
+        cJSON_AddNumberToObject(o, "size", files[i].size);
+        cJSON_AddStringToObject(o, "kind", floppy_kind_name(files[i].kind));
+        cJSON_AddItemToArray(list, o);
+    }
+    free(files);
+    return send_json(req, "200 OK", root);
+}
+
+static esp_err_t post_floppy_upload(httpd_req_t *req)
+{
+    char name[FLOPPY_NAME_LEN + 4];
+    if (!upload_type_ok(req))
+        return send_upload_type_error(req);
+    if (!query_name(req, name, sizeof(name)))
+        return send_floppy_error(req, FLOPPY_E_NAME);
+    int r = floppy_create(name, req->content_len);
+    if (r)
+        return send_floppy_error(req, r);
+    size_t got;
+    r = receive_body(req, floppy_write, &got);
+    int c = floppy_close(!r && got == req->content_len);
+    if (!r)
+        r = c;
+    return r ? send_floppy_error(req, r) : send_ok(req);
+}
+
+static esp_err_t delete_floppy(httpd_req_t *req)
+{
+    char name[FLOPPY_NAME_LEN + 4];
+    if (!query_name(req, name, sizeof(name)))
+        return send_floppy_error(req, FLOPPY_E_NAME);
+    int r = floppy_delete(name);
+    return r ? send_floppy_error(req, r) : send_ok(req);
+}
+
+static esp_err_t put_floppy_rename(httpd_req_t *req)
+{
+    cJSON *root = read_json(req);
+    if (!root)
+        return ESP_OK;
+    int r = floppy_rename(str_of(root, "from", ""), str_of(root, "to", ""));
+    cJSON_Delete(root);
+    return r ? send_floppy_error(req, r) : send_ok(req);
 }
 
 // An HTTP GET from the internet: 'sink' gets the body in parts; the length or -1
@@ -791,7 +910,7 @@ void web_start(void)
     httpd_config_t cfg = HTTPD_DEFAULT_CONFIG();
     cfg.stack_size = 8192;
     cfg.core_id = 1;                    // the first core answers the Atari
-    cfg.max_uri_handlers = 20;
+    cfg.max_uri_handlers = 26;
     cfg.lru_purge_enable = true;
     httpd_handle_t server;
     if (httpd_start(&server, &cfg) != ESP_OK) {
@@ -817,6 +936,10 @@ void web_start(void)
         { "/api/v1/carts/rename",    HTTP_PUT,  put_cart_rename,  NULL },
         { "/api/v1/carts/catalog",   HTTP_GET,  get_catalog,      NULL },
         { "/api/v1/carts/download",  HTTP_POST, post_cart_download, NULL },
+        { "/api/v1/floppies",        HTTP_GET,  get_floppies,     NULL },
+        { "/api/v1/floppies",        HTTP_DELETE, delete_floppy,  NULL },
+        { "/api/v1/floppies/upload", HTTP_POST, post_floppy_upload, NULL },
+        { "/api/v1/floppies/rename", HTTP_PUT,  put_floppy_rename, NULL },
     };
     for (size_t i = 0; i < sizeof(uris) / sizeof(uris[0]); i++)
         httpd_register_uri_handler(server, &uris[i]);

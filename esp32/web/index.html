@@ -213,9 +213,14 @@
         </div>
         <div id="cartnote" class="muted small hidden">From the next reset of the Atari (switched off: from the next power-on).</div>
       </div>
-      <div class="mode">
+      <div class="mode" id="mode-floppy">
         <div class="title">Floppy emulator</div>
-        <div class="muted small">Coming later.</div>
+        <div class="muted small">A disk image from the SD card as drive A: or B:.</div>
+        <div class="switch">
+          <span id="flopstate" class="badge off">Off</span>
+          <a href="#floppies" class="btnlike">Floppies…</a>
+        </div>
+        <div id="flopnote" class="small muted hidden"></div>
       </div>
       <div class="mode" id="mode-emu">
         <div class="title">Cartridge emulator</div>
@@ -253,6 +258,28 @@
     <div class="row"><button class="secondary" id="catload" type="button">Show the catalogue</button>
       <input type="text" id="catfilter" class="hidden" placeholder="Filter: name or tag"></div>
     <ul class="slots" id="catlist" style="margin-top:8px"></ul>
+  </section>
+</main>
+
+<!-- ============ Floppies ============ -->
+<main id="floppies" class="hidden">
+  <section>
+    <h2>Floppy emulator</h2>
+    <div class="row"><span id="flop-now" class="muted">–</span>
+      <button id="flopoff" class="hidden" type="button">Take it out</button></div>
+    <p class="small muted">The images are in <code>\FLOPPIES</code> on the SD card: <code>.ST</code> or the compressed
+      <code>.MSA</code>. The floppy is read-only. Programs that talk to the floppy controller themselves, such as
+      many copy-protected games, do not work with it.</p>
+    <div class="row">
+      <label>Drive <select id="flopdrive"><option>A</option><option>B</option></select></label>
+      <label><input type="checkbox" id="flopdrives"> TheHulk's drives next to the floppy</label>
+    </div>
+    <div id="flop-msg" class="banner hidden"></div>
+    <ul class="slots" id="floplist" style="margin-top:8px"></ul>
+    <div class="row" style="margin-top:10px">
+      <label class="filebtn"><input type="file" id="flopupload" hidden><span class="secondary btnlike">Add an image…</span></label>
+      <span id="flopupstate" class="muted small"></span>
+    </div>
   </section>
 </main>
 
@@ -406,6 +433,14 @@ function render() {
   const n = emuNote(s);
   $("emunote").textContent = n.text; $("emunote").className = "small " + (n.bad ? "err-text" : "muted"); show($("emunote"), !!n.text);
   if (location.hash === "#carts") { $("emu-now").textContent = n.text || "Not in use: the cartridge is GEMDRIVE."; $("emu-now").className = n.bad ? "err-text" : "muted"; }
+  const fl = s.floppy, fn = floppyNote(s);
+  $("mode-floppy").classList.toggle("active", fl.on);
+  $("flopstate").textContent = fl.on ? fl.image : "Off";
+  $("flopstate").className = "badge " + (fl.on ? "active" : "off");
+  $("flopnote").textContent = fn.text; $("flopnote").className = "small " + (fn.bad ? "err-text" : "muted"); show($("flopnote"), !!fn.text);
+  show($("flopoff"), fl.on);
+  if (fl.on && !fl.drives) { $("cartstate").textContent = "Floppy only"; $("cartstate").className = "badge off"; }
+  if (location.hash === "#floppies") { $("flop-now").textContent = fn.text || "No floppy in the drive."; $("flop-now").className = fn.bad ? "err-text" : "muted"; }
   show($("updatenote"), !!(s.update && s.update.available));
   if (s.update && s.update.available) { $("update-latest").textContent = s.update.latest; $("update-own").textContent = s.version; }
   show($("setupnote"), s.wifi.setup);
@@ -490,11 +525,12 @@ $("setupstart").onclick = async () => {
 
 // ---------- Views ----------
 function route() {
-  const set = location.hash === "#settings", carts = location.hash === "#carts";
-  show($("front"), !set && !carts); show($("settings"), set); show($("carts"), carts);
+  const set = location.hash === "#settings", carts = location.hash === "#carts", flop = location.hash === "#floppies";
+  show($("front"), !set && !carts && !flop); show($("settings"), set); show($("carts"), carts); show($("floppies"), flop);
   $("gear").toggleAttribute("aria-current", set);
   if (set) loadSettings(); else show($("savebar"), false);
   if (carts) loadCarts();
+  if (flop) loadFloppies();
 }
 window.addEventListener("hashchange", route);
 
@@ -762,10 +798,11 @@ function emuNote(s) {
   return { text: c.image + " is in the cartridge." };
 }
 // Until the image is written to the flash: a window that tells so, then the result
-async function waitLoaded(title) {
+async function waitLoaded(title, text, isBusy) {
+  isBusy = isBusy || (st => st.cartridge.busy);
   const d = $("ask");
   $("ask-title").textContent = title;
-  $("ask-text").textContent = "Writing to TheHulk's flash, this takes a few seconds…";
+  $("ask-text").textContent = text || "Writing to TheHulk's flash, this takes a few seconds…";
   show($("ask-atari"), false); show($("ask-input"), false);
   show($("ask-cancel"), false); show($("ask-ok"), false);
   d.oncancel = e => e.preventDefault();
@@ -774,7 +811,7 @@ async function waitLoaded(title) {
   let st = null;
   await new Promise(r => setTimeout(r, 300));
   while (Date.now() < until) {
-    try { st = await api("GET", "/api/v1/status"); if (!st.cartridge.busy) break; st = null; } catch (e) { st = null; }
+    try { st = await api("GET", "/api/v1/status"); if (!isBusy(st)) break; st = null; } catch (e) { st = null; }
     await new Promise(r => setTimeout(r, 400));
   }
   d.close();
@@ -825,11 +862,12 @@ async function deleteCart(f) {
   loadCarts();
 }
 // "Rick Dangerous" + ".STC" -> RICKDANG.STC, not yet on the card
-function name83(name, ext) {
-  ext = (ext || "BIN").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 3);
-  if (!["STC", "IMG", "BIN", "ROM", "CAR"].includes(ext)) ext = "BIN";
-  let base = name.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 8) || "CART";
-  const taken = new Set((carts && carts.files || []).map(f => f.name));
+function name83(name, ext, allowed, list) {
+  allowed = allowed || ["STC", "IMG", "BIN", "ROM", "CAR"];
+  ext = (ext || allowed[0]).toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 3);
+  if (!allowed.includes(ext)) ext = allowed[allowed.length > 2 ? 2 : 0];
+  let base = name.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 8) || "IMAGE";
+  const taken = new Set(((list || carts) && (list || carts).files || []).map(f => f.name));
   for (let i = 1; taken.has(base + "." + ext) && i < 100; i++)
     base = base.slice(0, 8 - String(i).length) + i;
   return base + "." + ext;
@@ -886,6 +924,98 @@ async function downloadCart(r, btn) {
   btn.textContent = "On the SD card";
   loadCarts();
 }
+
+// ---------- Floppies ----------
+let floppies = null;
+function flopMsg(kind, text) { const m = $("flop-msg"); m.className = "banner " + kind; m.textContent = text; show(m, !!text); }
+function floppyNote(s) {
+  const f = s.floppy, where = " in drive " + f.drive + ":";
+  if (f.busy) return { text: "Loading " + f.image + "…" };
+  if (f.error) return { bad: true, text: f.error };
+  if (!f.on) return { text: "" };
+  if (!f.ready) return { bad: true, text: f.image + " is not loaded. Is the SD card in TheHulk?" };
+  if (!s.atari_on) return { text: f.image + " is ready: it starts when the Atari is switched on." };
+  return { text: f.image + where + (f.installed ? "." : ": press reset on the Atari to start from it.") };
+}
+async function loadFloppies() {
+  try { floppies = await api("GET", "/api/v1/floppies"); } catch (e) { flopMsg("err", e.message); return; }
+  flopMsg(floppies.card ? "" : "err", floppies.card ? "" : "There is no SD card in TheHulk.");
+  if (status && status.floppy.on) { $("flopdrive").value = status.floppy.drive; $("flopdrives").checked = status.floppy.drives; }
+  const ul = $("floplist"); ul.innerHTML = "";
+  if (floppies.card && !floppies.files.length)
+    ul.innerHTML = '<li class="free">No images yet: add one.</li>';
+  floppies.files.forEach(f => {
+    const li = document.createElement("li");
+    const active = floppies.on && f.name === floppies.image;
+    li.innerHTML = '<span class="slotno">' + (active ? "▶" : "") + '</span><span><strong>' + esc(f.name) + '</strong> ' +
+      '<span class="muted small">' + kb(f.size) + '</span> ' +
+      (f.kind === "bad" ? '<span class="badge off">not usable</span>' : f.kind === "msa" ? '<span class="badge off">MSA</span>' : "") + '</span>' +
+      '<span class="actions row"><button type="button" data-a="use"' + (f.kind === "bad" ? " disabled" : "") + '>Use</button>' +
+      '<button type="button" class="secondary" data-a="ren">Rename</button>' +
+      '<button type="button" class="danger" data-a="del">Delete</button></span>';
+    li.querySelector('[data-a=use]').onclick = () => useFloppy(f);
+    li.querySelector('[data-a=ren]').onclick = () => renameFloppy(f);
+    li.querySelector('[data-a=del]').onclick = () => deleteFloppy(f);
+    ul.appendChild(li);
+  });
+}
+async function useFloppy(f) {
+  const drive = $("flopdrive").value, drives = $("flopdrives").checked, was = status.floppy;
+  // Another disk in the running Atari: just like changing a floppy, nothing to confirm
+  const swap = was.on && was.installed && was.drive === drive && was.drives === drives;
+  if (!swap && !await ask({ title: "Use " + f.name + "?",
+      text: "TheHulk puts " + f.name + " in drive " + drive + ":." +
+            (status.cartridge.emulator ? "\n\nThe cartridge image goes out: GEMDRIVE comes back in the cartridge." : "") +
+            (drives ? "" : "\n\nNo TheHulk drives, no clock and no STinG until you take the floppy out."),
+      ok: "Use " + f.name })) return;
+  try { await api("PUT", "/api/v1/mode", { mode: "floppy", image: f.name, drive, drives }); } catch (e) { return tell(e.message); }
+  const st = await waitLoaded("Loading " + f.name, "Reading the image from the SD card…", s => s.floppy.busy);
+  loadFloppies();
+  if (!st) return tell("TheHulk did not report that the image is loaded. Check the state on the page.");
+  if (st.floppy.error) return tell(st.floppy.error);
+  if (st.atari_on && st.floppy.installed) return;     // in the drive now: the page says so
+  ask({ title: f.name + " is ready", cancel: null, reset: st.atari_on,
+        text: st.atari_on ? f.name + " is in drive " + drive + ": now." : "Switch the Atari on to start from it." });
+}
+$("flopoff").onclick = async () => {
+  if (!await ask({ title: "Take the floppy out?", text: "From the next reset the cartridge is GEMDRIVE only.", ok: "Take it out" })) return;
+  try { await api("PUT", "/api/v1/mode", { mode: "gemdrive" }); } catch (e) { return tell(e.message); }
+  poll(); loadFloppies();
+  if (status.atari_on) ask({ title: "The floppy is out", cancel: null, reset: true, text: "GEMDRIVE and the drives come back after a reset." });
+};
+async function renameFloppy(f) {
+  const to = await ask({ title: "Rename " + f.name, text: "An 8.3 name ending in .ST or .MSA.", input: f.name, ok: "Rename" });
+  if (!to || to.toUpperCase() === f.name) return;
+  try { await api("PUT", "/api/v1/floppies/rename", { from: f.name, to: to.toUpperCase() }); } catch (e) { return tell(e.message); }
+  loadFloppies();
+}
+async function deleteFloppy(f) {
+  if (!await ask({ title: "Delete " + f.name + "?", text: "The image is removed from the SD card." +
+      (floppies.on && f.name === floppies.image ? "\n\nThe Atari can go on reading it until TheHulk restarts or you choose another one." : ""),
+      ok: "Delete", danger: true })) return;
+  try { await api("DELETE", "/api/v1/floppies?name=" + encodeURIComponent(f.name)); } catch (e) { return tell(e.message); }
+  loadFloppies();
+}
+$("flopupload").onchange = async () => {
+  const file = $("flopupload").files[0];
+  $("flopupload").value = "";
+  if (!file) return;
+  const dot = file.name.lastIndexOf("."), ext = dot > 0 ? file.name.slice(dot + 1).toUpperCase() : "";
+  if (ext !== "ST" && ext !== "MSA") return tell(file.name + " is not an .ST or .MSA disk image. Unpack a .ZIP or .GZ first.");
+  if (file.size > 1835008) return tell(file.name + " is " + kb(file.size) + ": a disk image is 1.75 MB at most.");
+  const name = await ask({ title: "Add " + file.name, text: "The name on the SD card (8.3):",
+      input: name83(file.name.slice(0, dot), ext, ["ST", "MSA"], floppies), ok: "Add" });
+  if (!name) return;
+  $("flopupstate").textContent = "Sending…";
+  try {
+    const r = await fetch("/api/v1/floppies/upload?name=" + encodeURIComponent(name.toUpperCase()),
+                          { method: "POST", headers: { "Content-Type": "application/octet-stream" }, body: file });
+    let d = {}; try { d = await r.json(); } catch (e) {}
+    if (!r.ok) throw new Error(d.message || "HTTP " + r.status);
+  } catch (e) { $("flopupstate").textContent = ""; return tell(e.message); }
+  $("flopupstate").textContent = "";
+  loadFloppies();
+};
 
 route();
 poll();

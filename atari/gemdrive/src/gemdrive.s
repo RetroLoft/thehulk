@@ -464,6 +464,8 @@ rom_function:
 ; drive table.
     tst.w   GEMDRVEMUL_FLOPPY_SESSION_INSTALL_FLOPPY
     beq.s   .rom_function_no_floppy
+    bsr     get_tos_version              ; TheHulk: the hooks need these, also without GEMDRIVE
+    bsr     detect_hw
     bsr     install_floppy_hooks
 .rom_function_no_floppy:
     tst.w   GEMDRVEMUL_FLOPPY_SESSION_INSTALL_GEMDRIVE

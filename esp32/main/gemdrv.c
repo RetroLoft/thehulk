@@ -9,11 +9,13 @@
 #include "esp_rom_crc.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "floppy.h"
 #include "gemdrv.h"
 #include "gemdrv_fs.h"
 #include "gemdrv_layout.h"
 #include "netbridge.h"
 #include "settings.h"
+#include "status_led.h"
 #include "wifi.h"
 #include "shadow.h"
 
@@ -30,6 +32,8 @@ static uint16_t s_slot_drive[GEMDRIVE_MAX_RUNTIME_DRIVES];
 static int s_slot_count;
 static bool s_restart;
 static bool s_y2k_patch;
+static bool s_floppy_hooks;     // this boot the Atari installed the floppy hooks
+static bool s_cpu_cache;        // a TT or Falcon: code on the stack needs a cache flush
 
 static uintptr_t shared(void)
 {
@@ -347,6 +351,60 @@ static uint32_t status_word(wifi_state_t state)
            state == WIFI_STATE_FAILED ? GEMDRV_STATUS_FAILED : GEMDRV_STATUS_BUSY;
 }
 
+// What GEMDRIVE looks at when it starts, and the floppy emulator's word for the wait code:
+// on the stack without GEMDRIVE (floppy.s)
+static bool floppy_policy(void)
+{
+    uintptr_t m = shared();
+    bool off = settings_cart_off(), floppy = floppy_emulator_on() && !off;
+    uint16_t gem = !off && (!floppy || floppy_keep_drives());
+#ifdef HULK_GEMDRIVE_OFF
+    gem = 0;
+#endif
+    uint32_t buffer = floppy && !gem ? (s_cpu_cache ? 2 : 1) : 0;
+    uint16_t drive = floppy_drive();
+    volatile uint16_t *w_gem = (volatile uint16_t *)(m + GEMDRVEMUL_FLOPPY_SESSION_INSTALL_GEMDRIVE);
+    volatile uint16_t *w_floppy = (volatile uint16_t *)(m + GEMDRVEMUL_FLOPPY_SESSION_INSTALL_FLOPPY);
+    volatile uint16_t *w_drive = (volatile uint16_t *)(m + GEMDRVEMUL_FLOPPY_SESSION_DRIVE_NUMBER);
+    volatile uint16_t *w_buffer = (volatile uint16_t *)(m + GEMDRVEMUL_SHARED_VARIABLES + SHARED_VARIABLE_BUFFER_TYPE * 4 + 2);
+    bool changed = *w_gem != gem || *w_floppy != floppy || *w_drive != drive;
+    if (changed) {
+        *w_gem = gem;
+        *w_floppy = floppy;
+        *w_drive = drive;
+        shadow_mark(SHADOW_ROM3 + GEMDRVEMUL_FLOPPY_SESSION_INSTALL_GEMDRIVE, 6);
+    }
+    if (*w_buffer != buffer) {
+        set_shared_var(SHARED_VARIABLE_BUFFER_TYPE, buffer);
+        changed = true;                 // in the status area: no mark needed
+    }
+    return changed;
+}
+
+// The image in use for the Atari: geometry, BPB, and "changed" so that TOS reads it anew
+static void floppy_publish(void)
+{
+    uintptr_t m = shared();
+    const floppy_image_t *f = floppy_image();
+    WRITE_AND_SWAP_LONGWORD(m, GEMDRVEMUL_FLOPPY_SESSION_STATUS, f ? 0 : 1);
+    if (f) {
+        WRITE_WORD(m, GEMDRVEMUL_FLOPPY_SESSION_SIDES, f->sides);
+        WRITE_WORD(m, GEMDRVEMUL_FLOPPY_SESSION_SECTORS_PER_TRACK, f->sectors_per_track);
+        WRITE_WORD(m, GEMDRVEMUL_FLOPPY_SESSION_TRACKS, f->tracks);
+        WRITE_WORD(m, GEMDRVEMUL_FLOPPY_SESSION_BYTES_PER_SECTOR, 512);
+        for (int i = 0; i < 9; i++)
+            WRITE_WORD(m, GEMDRVEMUL_FLOPPY_SESSION_BPB + i * 2, f->bpb[i]);
+    }
+    WRITE_WORD(m, GEMDRVEMUL_FLOPPY_SESSION_MEDIA_CHANGED, f ? 1 : 0);
+    shadow_mark(SHADOW_ROM3 + GEMDRVEMUL_FLOPPY_SESSION_STATUS,
+                GEMDRVEMUL_FLOPPY_SESSION_END - GEMDRVEMUL_FLOPPY_SESSION_STATUS);
+}
+
+bool gemdrv_floppy_installed(void)
+{
+    return s_floppy_hooks;
+}
+
 bool gemdrv_poll(void)
 {
     uintptr_t m = shared();
@@ -365,15 +423,15 @@ bool gemdrv_poll(void)
         write_datetime(&t);
         changed = true;
     }
-#ifndef HULK_GEMDRIVE_OFF
-    // Button 1 or the console: GEMDRIVE reads this when it starts, after the next reset
-    volatile uint16_t *install = (volatile uint16_t *)(m + GEMDRVEMUL_FLOPPY_SESSION_INSTALL_GEMDRIVE);
-    if (*install != !settings_cart_off()) {
-        *install = !settings_cart_off();
-        shadow_mark(SHADOW_ROM3 + GEMDRVEMUL_FLOPPY_SESSION_INSTALL_GEMDRIVE, 2);
+    // Button 1, the console or the web page: GEMDRIVE reads this when it starts, after the
+    // next reset
+    if (floppy_policy())
+        changed = true;
+    if (floppy_take_change()) {
+        floppy_publish();
         changed = true;
     }
-#endif
+    status_led_emulator(floppy_emulator_on());
     if (net_pending_publish(m))
         changed = true;
     v = status_word(wifi_time_state());     // after the time it announces
@@ -430,16 +488,15 @@ void gemdrv_init(void)
     *((volatile uint16_t *)(m + GEMDRVEMUL_PING_STATUS)) = 0;
     WRITE_AND_SWAP_LONGWORD(m, GEMDRVEMUL_TIMEOUT_SEC, 45);
 
-    // GEMDRIVE on, floppy emulation off
-#ifdef HULK_GEMDRIVE_OFF
-    WRITE_WORD(m, GEMDRVEMUL_FLOPPY_SESSION_INSTALL_GEMDRIVE, 0);
-#else
-    WRITE_WORD(m, GEMDRVEMUL_FLOPPY_SESSION_INSTALL_GEMDRIVE, !settings_cart_off());
-#endif
-    WRITE_WORD(m, GEMDRVEMUL_FLOPPY_SESSION_INSTALL_FLOPPY, 0);
+    // GEMDRIVE and the floppy emulator, what the web page chose
+    s_floppy_hooks = false;
+    s_cpu_cache = false;
+    floppy_boot();
+    floppy_take_change();
+    floppy_policy();
+    floppy_publish();
 
     load_drives();
-    set_shared_var(SHARED_VARIABLE_BUFFER_TYPE, 0);            // 0: _dskbufp, 1: stack
     set_shared_var(SHARED_VARIABLE_FAKE_FLOPPY, 0);
     set_shared_var(SHARED_VARIABLE_PROTOCOL_VERSION, GEMDOS_SLOT_PROTOCOL_VERSION);
     // Keep booting from the Atari's own drive (later a setting)
@@ -531,6 +588,7 @@ void gemdrv_command(const hulk_packet_t *pkt)
             set_shared_var(SHARED_VARIABLE_RAM_SEND, 0);
             set_shared_var(SHARED_VARIABLE_RAM_SEND_WRITE, 0);
             set_shared_var(SHARED_VARIABLE_RAM_FREAD_COPY, 0);
+            s_floppy_hooks = false;
             net_bridge_set(0, 0);       // STinG is gone with the reset
             fs_reset();
             load_drives();
@@ -540,6 +598,9 @@ void gemdrv_command(const hulk_packet_t *pkt)
             s_y2k_patch = (value >> 16) < 0x0200 && !(value & 0x8000);
             WRITE_AND_SWAP_LONGWORD(m, GEMDRVEMUL_RTC_Y2K_PATCH, s_y2k_patch ? 0xFFFFFFFF : 0);
         }
+        // A TT or Falcon (_MCH): the wait code on the stack needs a flush of the cache
+        if (index == SHARED_VARIABLE_HARDWARE_TYPE)
+            s_cpu_cache = (value >> 16) >= 2;
         // TOS 4: the Falcon can read a wrong word from the cartridge now and then
         if (index == SHARED_VARIABLE_SVERSION && (value >> 24) == 0x04)
             set_shared_var(SHARED_VARIABLE_READ_CHECK, 1);
@@ -552,10 +613,44 @@ void gemdrv_command(const hulk_packet_t *pkt)
         break;
     }
 
-    case GEMDRVEMUL_FLOPPY_SAVE_VECTORS:
+    // --- The floppy emulator (atari/gemdrive/src/inc/floppy.s) ------------------------
+    case GEMDRVEMUL_FLOPPY_SAVE_VECTORS: {
+        // main.c waited for the image: this answer decides whether the Atari boots from it
+        if (floppy_take_change() || !s_floppy_hooks)
+            floppy_publish();
+        WRITE_AND_SWAP_LONGWORD(m, GEMDRVEMUL_FLOPPY_SESSION_OLD_HDV_BPB, ((uint32_t)payloadPtr[1] << 16) | payloadPtr[0]);
+        WRITE_AND_SWAP_LONGWORD(m, GEMDRVEMUL_FLOPPY_SESSION_OLD_HDV_RW, ((uint32_t)payloadPtr[3] << 16) | payloadPtr[2]);
+        WRITE_AND_SWAP_LONGWORD(m, GEMDRVEMUL_FLOPPY_SESSION_OLD_HDV_MEDIACH, ((uint32_t)payloadPtr[5] << 16) | payloadPtr[4]);
+        shadow_mark(SHADOW_ROM3 + GEMDRVEMUL_FLOPPY_SESSION_OLD_HDV_BPB, 12);
+        s_floppy_hooks = true;
+        ESP_LOGI(TAG, "floppy hooks installed, image %s", floppy_image() ? floppy_active_name() : "none");
+        break;
+    }
     case GEMDRVEMUL_FLOPPY_SAVE_XBIOS_VECTOR:
-        // Only sent when the floppy emulation is installed; it is not (INSTALL_FLOPPY = 0)
-        ESP_LOGW(TAG, "floppy command 0x%04x while the floppy emulation is off", pkt->cmd);
+        WRITE_AND_SWAP_LONGWORD(m, GEMDRVEMUL_FLOPPY_SESSION_OLD_XBIOS_VECTOR, ((uint32_t)payloadPtr[1] << 16) | payloadPtr[0]);
+        shadow_mark(SHADOW_ROM3 + GEMDRVEMUL_FLOPPY_SESSION_OLD_XBIOS_VECTOR, 4);
+        break;
+    case GEMDRVEMUL_FLOPPY_READ_SECTOR: {
+        uint32_t lba = ((uint32_t)payloadPtr[1] << 16) | payloadPtr[0];
+        const uint8_t *data = floppy_sector(lba);
+        if (data) {
+            uint16_t chk = 0;
+            for (int i = 0; i < 512; i += 2)
+                chk += (data[i] << 8) | data[i + 1];
+            set_shared_var(SHARED_VARIABLE_READ_CHK, chk);
+            write_bytes(GEMDRVEMUL_FLOPPY_SESSION_SECTOR_DATA, data, 512);
+            shadow_mark(SHADOW_ROM3 + GEMDRVEMUL_FLOPPY_SESSION_SECTOR_DATA, 512);
+            status_led_activity();
+        } else {
+            ESP_LOGW(TAG, "floppy sector %lu does not exist", (unsigned long)lba);
+        }
+        WRITE_AND_SWAP_LONGWORD(m, GEMDRVEMUL_FLOPPY_SESSION_STATUS, data ? 0 : 1);
+        shadow_mark(SHADOW_ROM3 + GEMDRVEMUL_FLOPPY_SESSION_STATUS, 4);
+        break;
+    }
+    case GEMDRVEMUL_FLOPPY_MEDIA_CHANGE_ACK:
+        WRITE_WORD(m, GEMDRVEMUL_FLOPPY_SESSION_MEDIA_CHANGED, 0);
+        shadow_mark(SHADOW_ROM3 + GEMDRVEMUL_FLOPPY_SESSION_MEDIA_CHANGED, 2);
         break;
 
     // --- The drive: folder HD of the microSD card (gemdrv_fs.c) -----------

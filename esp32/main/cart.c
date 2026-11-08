@@ -10,6 +10,7 @@
 #include "ff.h"
 #include "nvs.h"
 #include "cart.h"
+#include "floppy.h"
 #include "flashfs.h"
 #include "sd.h"
 #include "shadow.h"
@@ -425,6 +426,8 @@ int cart_select(const char *name)
         r = CART_E_IO;
     if (!r) {
         ESP_LOGI(TAG, "cartridge emulator with %s", n);
+        if (floppy_emulator_on())
+            floppy_off();               // the cartridge cannot be both
         s_reload = true;
         s_load_failed = false;
     }

@@ -12,5 +12,7 @@ void gemdrv_init(void);
 void gemdrv_command(const hulk_packet_t *pkt);
 // Hands the state of the network and the clock to the shared memory; true when it changed
 bool gemdrv_poll(void);
+// This boot the Atari installed the floppy hooks: another image needs no reset
+bool gemdrv_floppy_installed(void);
 // The configuration program asked for a restart, to apply the settings
 bool gemdrv_restart_wanted(void);

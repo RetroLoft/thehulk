@@ -9,6 +9,7 @@
 #include "esp_log.h"
 #include "board.h"
 #include "cart.h"
+#include "floppy.h"
 #include "console.h"
 #include "netbridge.h"
 #include "settings.h"
@@ -100,13 +101,15 @@ static void console_task(void *arg)
                 down = xTaskGetTickCount();
                 long_done = false;
             } else if (!long_done && xTaskGetTickCount() - down < pdMS_TO_TICKS(SHORT_MS)) {
-                // A short press, on release: leaves the cartridge emulator, otherwise
-                // switches the cartridge off or on
+                // A short press, on release: leaves the cartridge or floppy emulator,
+                // otherwise switches the cartridge off or on
                 if (cart_emulator_on())
                 {
                     cart_select(NULL);
                     cart_apply_now();
                 }
+                else if (floppy_emulator_on())
+                    floppy_off();
                 else
                     console_set_cart_off(!settings_cart_off());
             }

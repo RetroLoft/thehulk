@@ -108,6 +108,15 @@ _copy_sync_code:
     move.l (a1)+, (a2)+
     dbf d6, _copy_sync_code
 
+    ; TheHulk: on the stack with a 68030 (the ESP32 sets 2 on a TT or Falcon): the stack moves,
+    ; the instruction cache may still hold this code from a few bytes further
+    cmp.l #2, (GEMDRVEMUL_SHARED_VARIABLES + (SHARED_VARIABLE_BUFFER_TYPE * 4))
+    bne.s .send_sync_no_cache_flush
+    dc.w $4E7A, $6002                   ; movec cacr, d6
+    or.w #$0008, d6                     ; clear the instruction cache
+    dc.w $4E7B, $6002                   ; movec d6, cacr
+.send_sync_no_cache_flush:
+
     move.l a0, a2                       ; Return address to a2
 
     ; The sync command synchronize with a random token
@@ -217,8 +226,8 @@ _wait_me:
     subq.l #1, d6                            ; Decrement the outer loop
     bne.s _wait_me                           ; Wait for the timeout
 
-    tst.l (GEMDRVEMUL_SHARED_VARIABLES + (SHARED_VARIABLE_BUFFER_TYPE * 4))
-    beq.s ._wait_me_restore_dskbuff
+    cmp.l a3, sp                             ; TheHulk: this code on the stack? Not the setting:
+    bne.s ._wait_me_restore_dskbuff          ; that can change while this command waits
     lea (_end_sync_code_in_stack - _start_sync_code_in_stack)(sp), sp
 ._wait_me_restore_dskbuff:
     busy_off
@@ -416,8 +425,8 @@ _wait_me_write:
     bne.s _wait_me_write                     ; Wait for the timeout
 
 
-    tst.l (GEMDRVEMUL_SHARED_VARIABLES + (SHARED_VARIABLE_BUFFER_TYPE * 4))
-    beq.s ._wait_me_write_restore_dskbuff
+    cmp.l a3, sp                             ; TheHulk: see the same test in the code above
+    bne.s ._wait_me_write_restore_dskbuff
     lea (_end_sync_write_code_in_stack - _start_sync_write_code_in_stack)(sp), sp
 ._wait_me_write_restore_dskbuff:
     busy_off

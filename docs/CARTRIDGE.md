@@ -7,6 +7,9 @@ front page.
 While an image is in the cartridge, GEMDRIVE is not there: no TheHulk drives, no
 `THEHULK.PRG`, no clock and no STinG. The web page and AP mode keep working.
 
+**An SD card is required** to add and choose images. Once an image is chosen, it is in
+TheHulk's own flash and the card may be taken out.
+
 ## Images
 
 The images are in the folder `\CARTS` on the **SD card**. TheHulk creates the folder when

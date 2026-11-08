@@ -24,8 +24,10 @@
 #include "board.h"
 #include "bootrec.h"
 #include "cart.h"
+#include "floppy.h"
 #include "fpga.h"
 #include "gemdrv.h"
+#include "gemdrv_layout.h"
 #include "hulk.h"
 #include "sd.h"
 #include "settings.h"
@@ -92,6 +94,7 @@ static size_t rom_len(void)
 // acknowledged first (the FPGA can take the next one), then answered.
 static TaskHandle_t s_main_task;
 static uint32_t s_slowest_us;   // slowest command since the last log line
+#define FLOPPY_BOOT_WAIT_MS 3500 // the Atari gives up on a command after ~5 s
 
 static void irq_isr(void *arg)
 {
@@ -137,6 +140,8 @@ static void handle_packets(void)
         if (s_emulator)
             continue;               // a game that happens to read $FBABCD: no command
 #ifndef HULK_CART_READONLY
+        if (pkt.cmd == GEMDRVEMUL_FLOPPY_SAVE_VECTORS)
+            floppy_wait_ready(FLOPPY_BOOT_WAIT_MS); // not holding the card: that needs it
         sd_lock();
         gemdrv_command(&pkt);
         sd_unlock();
@@ -188,7 +193,7 @@ static void load_contents(void)
     shadow_init();
     // The cartridge emulator: the chosen image from the flash (~40 ms), else GEMDRIVE
     s_emulator = cart_load_shadow();
-    status_led_emulator(s_emulator);
+    status_led_emulator(s_emulator || floppy_emulator_on());
     if (s_emulator) {
         ESP_LOGI(TAG, "cartridge emulator: %s", cart_active_name());
     } else {
@@ -227,9 +232,14 @@ static void start_cartridge(void)
     s_rec.waited = !fpga_power_present();
     if (!fpga_power_present()) {
         ESP_LOGI(TAG, "waiting for Atari power");
-        while (!fpga_power_present())
+        bool floppy_chosen = false;
+        while (!fpga_power_present()) {
+            floppy_chosen |= floppy_take_change();
             vTaskDelay(pdMS_TO_TICKS(5));
+        }
         vTaskDelay(pdMS_TO_TICKS(10));         // let the 1.2 V / 3.3 V regulators settle
+        if (floppy_chosen)
+            load_contents();
     }
     // Chosen on the web page while the Atari was off (TheHulk on USB power)
     if (cart_reload_pending())
