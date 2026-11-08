@@ -3,6 +3,7 @@ include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 # The firmware version, as with SideTNFS: RELEASE_VERSION from the environment, else
 # version.txt at the top of the repository (shown on the web page and in the log)
 set(RELEASE_VERSION $ENV{RELEASE_VERSION})
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CMAKE_CURRENT_LIST_DIR}/../version.txt")
 if(NOT RELEASE_VERSION)
     file(READ "${CMAKE_CURRENT_LIST_DIR}/../version.txt" RELEASE_VERSION)
 endif()
