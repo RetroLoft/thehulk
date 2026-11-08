@@ -60,6 +60,7 @@
   ul.slots { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
   ul.slots li { display: grid; grid-template-columns: 2.4em minmax(0, 1fr) auto; gap: 10px; align-items: center;
                 padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; }
+  footer.links { display: flex; gap: 20px; justify-content: center; padding: 8px 16px 24px; font-size: 14px; }
   .err-text { color: var(--err); font-weight: 600; }
   .btnlike { display: inline-block; font: inherit; padding: 8px 14px; border-radius: 8px; cursor: pointer;
              border: 1px solid var(--line); color: var(--accent); text-decoration: none; }
@@ -153,6 +154,11 @@
       <p class="muted small">Trying again every few seconds…</p>
     </div>
   </div>
+  <div id="updatenote" class="banner ok hidden" role="status" style="margin-top:16px">
+    <strong>New firmware available:</strong> <span id="update-latest"></span> (this TheHulk has
+    <span id="update-own"></span>).
+    <a href="https://retroloft.net/thehulk" target="_blank" rel="noopener">Download it from RetroLoft</a>.
+  </div>
   <div id="nowifi" class="banner err hidden" role="alert" style="margin-top:16px">
     <strong>TheHulk is not connected to Wi-Fi <span id="nowifi-ssid"></span>.</strong>
     TNFS drives, STinG and the time from the internet do not work. <span id="nowifi-why"></span>
@@ -227,10 +233,11 @@
 <main id="carts" class="hidden">
   <section>
     <h2>Cartridge emulator</h2>
-    <p id="emu-now" class="muted">–</p>
+    <div class="row"><span id="emu-now" class="muted">–</span>
+      <button id="usegem2" class="hidden" type="button">Use GEMDRIVE</button></div>
     <p class="small muted">The images are in <code>\CARTS</code> on the SD card. <strong>Use</strong> puts one in
       the cartridge at once: press reset on the Atari to start it. A short press on button 1, or
-      <em>Use GEMDRIVE</em> on the front page, goes back to GEMDRIVE.</p>
+      <em>Use GEMDRIVE</em>, goes back to GEMDRIVE.</p>
     <div id="carts-msg" class="banner hidden"></div>
     <ul class="slots" id="cartlist" style="margin-top:8px"></ul>
     <div class="row" style="margin-top:10px">
@@ -317,6 +324,11 @@
     </div>
   </section>
 </main>
+
+<footer class="links">
+  <a href="https://retroloft.net/thehulk" target="_blank" rel="noopener">retroloft.net/thehulk</a>
+  <a href="https://github.com/RetroLoft/thehulk" target="_blank" rel="noopener">GitHub</a>
+</footer>
 <div id="savebar" class="savebar hidden">
   <span id="dirty" class="muted small"></span>
   <button class="secondary" id="revert" type="button">Revert</button>
@@ -384,7 +396,7 @@ function render() {
   $("mode-cart").classList.toggle("active", on && !emu);
   $("carttoggle").textContent = on ? "Switch off" : "Switch on";
   $("carttoggle").disabled = false;
-  show($("carttoggle"), !emu); show($("usegem"), emu);
+  show($("carttoggle"), !emu); show($("usegem"), emu); show($("usegem2"), emu);
   show($("cartnote"), s.atari_on && !emu);
   if (emu) { $("cartstate").textContent = "Not used"; $("cartstate").className = "badge off"; }
   $("mode-emu").classList.toggle("active", emu);
@@ -393,6 +405,8 @@ function render() {
   const n = emuNote(s);
   $("emunote").textContent = n.text; $("emunote").className = "small " + (n.bad ? "err-text" : "muted"); show($("emunote"), !!n.text);
   if (location.hash === "#carts") { $("emu-now").textContent = n.text || "Not in use: the cartridge is GEMDRIVE."; $("emu-now").className = n.bad ? "err-text" : "muted"; }
+  show($("updatenote"), !!(s.update && s.update.available));
+  if (s.update && s.update.available) { $("update-latest").textContent = s.update.latest; $("update-own").textContent = s.version; }
   show($("setupnote"), s.wifi.setup);
   show($("nowifi"), !s.wifi.ip);
   $("nowifi-ssid").textContent = s.wifi.ssid ? "“" + s.wifi.ssid + "”" : "";
@@ -787,12 +801,13 @@ async function useCart(f) {
   const diag = f.kind === "diagnostic";
   ask({ title: f.name + " is loaded", cancel: null, reset: st.atari_on || diag, text: loadedText(f.name, st, diag) });
 }
-$("usegem").onclick = async () => {
+$("usegem").onclick = $("usegem2").onclick = async () => {
   if (!await ask({ title: "Back to GEMDRIVE?",
       text: "TheHulk puts GEMDRIVE back in the cartridge. What runs from the cartridge may crash.", ok: "Use GEMDRIVE" })) return;
   try { await api("PUT", "/api/v1/mode", { mode: "gemdrive" }); } catch (e) { return tell(e.message); }
   const st = await waitLoaded("Loading GEMDRIVE");
   if (!st) return tell("TheHulk did not report that GEMDRIVE is loaded. Check the state on the page.");
+  loadCarts();
   ask({ title: "GEMDRIVE is loaded", cancel: null, reset: st.atari_on, text: loadedText("GEMDRIVE", st, false) });
 };
 async function renameCart(f) {

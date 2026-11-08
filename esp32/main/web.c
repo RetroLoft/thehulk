@@ -2,7 +2,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <ctype.h>
 #include "cJSON.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include "esp_http_client.h"
 #include "esp_app_desc.h"
 #include "esp_http_server.h"
@@ -22,6 +25,10 @@ static const char *TAG = "web";
 extern const char index_html[] asm("_binary_index_html_start");
 
 #define BODY_MAX 8192
+
+// A newer firmware on retroloft.net (update_task)
+static char s_latest[16];
+static volatile bool s_update;
 
 // --- Helpers ------------------------------------------------------------------------
 
@@ -167,6 +174,9 @@ static esp_err_t get_status(httpd_req_t *req)
     cJSON_AddStringToObject(wifi, "setup_ssid", w.ap_ssid);
     cJSON_AddBoolToObject(wifi, "via_setup", from_setup_network(req));
     cJSON_AddBoolToObject(root, "atari_on", fpga_power_present());
+    cJSON *update = cJSON_AddObjectToObject(root, "update");
+    cJSON_AddBoolToObject(update, "available", s_update);
+    cJSON_AddStringToObject(update, "latest", s_update ? s_latest : "");
     cJSON *cart = cJSON_AddObjectToObject(root, "cartridge");
     cJSON_AddBoolToObject(cart, "on", !settings_cart_off());
     cJSON_AddBoolToObject(cart, "emulator", cart_emulator_on());
@@ -721,6 +731,59 @@ static esp_err_t post_cart_download(httpd_req_t *req)
     return r ? send_cart_error(req, r) : send_ok(req);
 }
 
+// --- Update check -------------------------------------------------------------------
+
+#define VERSION_URL      "http://retroloft.net/thehulk/version.txt"
+#define UPDATE_EVERY_MS  (6 * 3600 * 1000)
+#define UPDATE_RETRY_MS  (60 * 1000)     // the site did not answer
+#define UPDATE_WAIT_MS   2000            // no Wi-Fi yet
+
+// "v1.2.3": three numbers. Compared as numbers: as text v0.10.0 would sort before v0.9.0
+static bool parse_version(const char *s, int v[3])
+{
+    if (*s == 'v' || *s == 'V')
+        s++;
+    return isdigit((unsigned char)*s) && sscanf(s, "%d.%d.%d", &v[0], &v[1], &v[2]) == 3;
+}
+
+static bool is_newer(const char *remote, const char *local)
+{
+    int r[3], l[3];
+    if (!parse_version(remote, r) || !parse_version(local, l))
+        return false;
+    for (int i = 0; i < 3; i++)
+        if (r[i] != l[i])
+            return r[i] > l[i];
+    return false;
+}
+
+// Only tells the page: TheHulk never installs anything by itself
+static void update_task(void *arg)
+{
+    for (;;) {
+        uint32_t wait = UPDATE_WAIT_MS;
+        if (wifi_link_state() == WIFI_STATE_READY) {
+            wait = UPDATE_RETRY_MS;
+            mem_sink_t m = { 0 };
+            int len = fetch(VERSION_URL, 32, to_memory, &m);
+            if (len > 0) {
+                m.data[len] = 0;
+                m.data[strcspn(m.data, " \t\r\n")] = 0;
+                const char *own = esp_app_get_description()->version;
+                int v[3];
+                if (parse_version(m.data, v)) {
+                    copy_str(s_latest, sizeof(s_latest), m.data);
+                    s_update = is_newer(s_latest, own);
+                    ESP_LOGI(TAG, "update check: %s here, %s on retroloft.net", own, s_latest);
+                    wait = UPDATE_EVERY_MS;
+                }
+            }
+            free(m.data);
+        }
+        vTaskDelay(pdMS_TO_TICKS(wait));
+    }
+}
+
 // --- Start --------------------------------------------------------------------------
 
 void web_start(void)
@@ -758,5 +821,6 @@ void web_start(void)
     for (size_t i = 0; i < sizeof(uris) / sizeof(uris[0]); i++)
         httpd_register_uri_handler(server, &uris[i]);
     httpd_register_err_handler(server, HTTPD_404_NOT_FOUND, not_found);
+    xTaskCreatePinnedToCore(update_task, "update", 8192, NULL, 1, NULL, 1);
     ESP_LOGI(TAG, "web server on port 80");
 }

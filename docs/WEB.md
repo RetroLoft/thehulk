@@ -54,6 +54,12 @@ Wi-Fi settings, the page asks in a window with **SWITCH OFF YOUR ATARI**.
 - A red bar **TheHulk is not connected to Wi-Fi** when TheHulk itself has no connection.
   TNFS drives, STinG and the time do not work then.
 
+**A new firmware**: a green bar at the top when `http://retroloft.net/thehulk/version.txt`
+holds a higher version than this firmware. TheHulk looks after it connects to Wi-Fi and
+then every 6 hours. It only tells you: it never installs anything by itself.
+
+At the bottom of every page are links to the RetroLoft site and the GitHub repository.
+
 ## AP mode
 
 In AP mode TheHulk opens its own open Wi-Fi network, **"&lt;device name&gt;-XXXX"**, for
@@ -143,7 +149,7 @@ comes back as `{"error": "<CODE>", "message": "<text>"}`.
 
 | Call | What it does |
 |---|---|
-| `GET /api/v1/status` | name, hostname, version, `wifi` {ssid, ip, rssi, setup, setup_ssid, via_setup}, atari_on, `cartridge` {on, emulator, image, busy, running, load_failed, error} |
+| `GET /api/v1/status` | name, hostname, version, `wifi` {ssid, ip, rssi, setup, setup_ssid, via_setup}, atari_on, `update` {available, latest}, `cartridge` {on, emulator, image, busy, running, load_failed, error} |
 | `PUT /api/v1/cartridge` | `{"on": true}` or `false` |
 | `GET /api/v1/settings` | name, hostname, flash_letter, `drives` [{state: enabled/disabled/empty, letter, type: sd/tnfs, name, sd_path, host, port, mount}], `network` {ssid, password_set, auth_mode, dhcp, ip, netmask, gateway, dns, country}, `clock` {enabled, ntp_server, utc_offset} |
 | `PUT /api/v1/settings` | the same object. Everything is checked first, and an error changes nothing. `network.password` only when it changes, `network.clear_password` to remove it. |
