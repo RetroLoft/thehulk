@@ -12,5 +12,7 @@ void status_led_error(void);        // red for a moment
 void status_led_card(void);         // purple for a moment
 void status_led_cart_off(bool off); // yellow instead of the Wi-Fi blink while switched off
 
+// The cartridge emulator (main.c): green blinking, with other states in turn
+void status_led_emulator(bool on);
 // Setup mode (wifi.c): white blinking; with other states (no Wi-Fi, cartridge off) in turn
 void status_led_setup(bool on);

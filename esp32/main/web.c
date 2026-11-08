@@ -3,10 +3,12 @@
 #include <stdlib.h>
 #include <string.h>
 #include "cJSON.h"
+#include "esp_http_client.h"
 #include "esp_app_desc.h"
 #include "esp_http_server.h"
 #include "esp_log.h"
 #include "lwip/sockets.h"
+#include "cart.h"
 #include "console.h"
 #include "fpga.h"
 #include "gemdrv_fs.h"
@@ -167,6 +169,15 @@ static esp_err_t get_status(httpd_req_t *req)
     cJSON_AddBoolToObject(root, "atari_on", fpga_power_present());
     cJSON *cart = cJSON_AddObjectToObject(root, "cartridge");
     cJSON_AddBoolToObject(cart, "on", !settings_cart_off());
+    cJSON_AddBoolToObject(cart, "emulator", cart_emulator_on());
+    cJSON_AddStringToObject(cart, "image", cart_active_name());
+    // busy: the choice is still on its way into the cartridge
+    cJSON_AddBoolToObject(cart, "busy", cart_select_busy() ||
+                                        (fpga_power_present() && cart_change_pending()));
+    cJSON_AddStringToObject(cart, "running", cart_running_name());
+    cJSON_AddBoolToObject(cart, "load_failed", cart_load_failed());
+    int job = cart_select_busy() ? 0 : cart_select_result();
+    cJSON_AddStringToObject(cart, "error", job ? cart_error(job) : "");
     return send_json(req, "200 OK", root);
 }
 
@@ -485,6 +496,231 @@ static esp_err_t post_setup_start(httpd_req_t *req)
     return err;
 }
 
+// --- Cartridge emulator (cart.c) ----------------------------------------------------
+
+#define CATALOG_URL   "http://roms.sidecartridge.com/roms.json"
+#define CATALOG_HOST  "http://roms.sidecartridge.com/"
+#define CATALOG_MAX   65536
+#define MAX_CARTS     100
+
+static esp_err_t send_cart_error(httpd_req_t *req, int e)
+{
+    const char *status = e == CART_E_NO_CARD ? "409 Conflict" : e == CART_E_NOT_FOUND ? "404 Not Found" :
+                         e == CART_E_EXISTS || e == CART_E_BUSY ? "409 Conflict" :
+                         e == CART_E_IO ? "500 Internal Server Error" : "422 Unprocessable Entity";
+    return send_error(req, status, "CARTRIDGE", cart_error(e));
+}
+
+static esp_err_t get_carts(httpd_req_t *req)
+{
+    cart_file_t *files = malloc(MAX_CARTS * sizeof(cart_file_t));
+    if (!files)
+        return send_error(req, "500 Internal Server Error", "NO_MEMORY", "Out of memory.");
+    int n = cart_list(files, MAX_CARTS);
+    cJSON *root = cJSON_CreateObject();
+    cJSON_AddBoolToObject(root, "emulator", cart_emulator_on());
+    cJSON_AddStringToObject(root, "image", cart_active_name());
+    cJSON_AddBoolToObject(root, "card", n >= 0);
+    cJSON *list = cJSON_AddArrayToObject(root, "files");
+    for (int i = 0; i < n; i++) {
+        cJSON *o = cJSON_CreateObject();
+        cJSON_AddStringToObject(o, "name", files[i].name);
+        cJSON_AddNumberToObject(o, "size", files[i].size);
+        cJSON_AddStringToObject(o, "kind", cart_kind_name(files[i].kind));
+        cJSON_AddItemToArray(list, o);
+    }
+    free(files);
+    return send_json(req, "200 OK", root);
+}
+
+// {"mode": "gemdrive"} or {"mode": "emulator", "image": "XENON.STC"}
+static esp_err_t put_mode(httpd_req_t *req)
+{
+    cJSON *root = read_json(req);
+    if (!root)
+        return ESP_OK;
+    char mode[16], image[CART_NAME_LEN + 4];
+    copy_str(mode, sizeof(mode), str_of(root, "mode", ""));
+    copy_str(image, sizeof(image), str_of(root, "image", ""));
+    cJSON_Delete(root);
+    int r;
+    if (!strcmp(mode, "gemdrive")) {
+        r = cart_select(NULL);
+        if (!r)
+            cart_apply_now();
+    }
+    else if (!strcmp(mode, "emulator"))
+        r = cart_select_start(image);   // status tells when it is in the cartridge
+    else
+        return send_error(req, "422 Unprocessable Entity", "INVALID_SETTING", "Mode: gemdrive or emulator.");
+    if (r)
+        return send_cart_error(req, r);
+    if (settings_cart_off())
+        console_set_cart_off(false);    // a cartridge is chosen: the Atari has to see it
+    ESP_LOGI(TAG, "mode from the web page: %s %s", mode, image);
+    return send_ok(req);
+}
+
+static bool query_name(httpd_req_t *req, char *out, size_t size)
+{
+    char q[64];
+    return httpd_req_get_url_query_str(req, q, sizeof(q)) == ESP_OK &&
+           httpd_query_key_value(q, "name", out, size) == ESP_OK;
+}
+
+// The file itself as the body (application/octet-stream), ?name=XENON.STC
+static esp_err_t post_cart_upload(httpd_req_t *req)
+{
+    char type[48] = "", name[CART_NAME_LEN + 4];
+    httpd_req_get_hdr_value_str(req, "Content-Type", type, sizeof(type));
+    if (strcmp(type, "application/octet-stream"))   // as read_json: never from a foreign page
+        return send_error(req, "415 Unsupported Media Type", "UNSUPPORTED_MEDIA_TYPE",
+                          "Send application/octet-stream.");
+    if (!query_name(req, name, sizeof(name)))
+        return send_cart_error(req, CART_E_NAME);
+    int r = cart_create(name, req->content_len);
+    if (r)
+        return send_cart_error(req, r);
+    char *buf = malloc(4096);
+    size_t got = 0;
+    while (!r && buf && got < req->content_len) {
+        int n = httpd_req_recv(req, buf, 4096);
+        if (n == HTTPD_SOCK_ERR_TIMEOUT)
+            continue;
+        if (n <= 0) {
+            r = CART_E_IO;
+            break;
+        }
+        r = cart_write(buf, n);
+        got += n;
+    }
+    free(buf);
+    int c = cart_close(!r && got == req->content_len);
+    if (!r)
+        r = c;
+    return r ? send_cart_error(req, r) : send_ok(req);
+}
+
+static esp_err_t delete_cart(httpd_req_t *req)
+{
+    char name[CART_NAME_LEN + 4];
+    if (!query_name(req, name, sizeof(name)))
+        return send_cart_error(req, CART_E_NAME);
+    int r = cart_delete(name);
+    return r ? send_cart_error(req, r) : send_ok(req);
+}
+
+static esp_err_t put_cart_rename(httpd_req_t *req)
+{
+    cJSON *root = read_json(req);
+    if (!root)
+        return ESP_OK;
+    int r = cart_rename(str_of(root, "from", ""), str_of(root, "to", ""));
+    cJSON_Delete(root);
+    return r ? send_cart_error(req, r) : send_ok(req);
+}
+
+// An HTTP GET from the internet: 'sink' gets the body in parts; the length or -1
+static int fetch(const char *url, int max, int (*sink)(void *ctx, const char *data, int len, int total),
+                 void *ctx)
+{
+    esp_http_client_config_t cfg = { .url = url, .timeout_ms = 10000, .buffer_size = 2048 };
+    esp_http_client_handle_t c = esp_http_client_init(&cfg);
+    if (!c)
+        return -1;
+    int total = -1;
+    char *buf = malloc(4096);
+    if (buf && esp_http_client_open(c, 0) == ESP_OK) {
+        int len = esp_http_client_fetch_headers(c);
+        if (esp_http_client_get_status_code(c) == 200 && len > 0 && len <= max) {
+            int done = 0;
+            while (done < len) {
+                int n = esp_http_client_read(c, buf, 4096);
+                if (n <= 0 || sink(ctx, buf, n, len))
+                    break;
+                done += n;
+            }
+            if (done == len)
+                total = len;
+        }
+        esp_http_client_close(c);
+    }
+    free(buf);
+    esp_http_client_cleanup(c);
+    return total;
+}
+
+typedef struct { char *data; int used; } mem_sink_t;
+
+static int to_memory(void *ctx, const char *data, int len, int total)
+{
+    mem_sink_t *m = ctx;
+    if (!m->data && !(m->data = malloc(total + 1)))
+        return -1;
+    memcpy(m->data + m->used, data, len);
+    m->used += len;
+    return 0;
+}
+
+// The list of roms.sidecartridge.com (the browser cannot fetch it itself: no CORS there, and
+// in AP mode the phone has no internet)
+static esp_err_t get_catalog(httpd_req_t *req)
+{
+    mem_sink_t m = { 0 };
+    int len = fetch(CATALOG_URL, CATALOG_MAX, to_memory, &m);
+    if (len < 0) {
+        free(m.data);
+        return send_error(req, "502 Bad Gateway", "NO_CATALOG",
+                          "The list from roms.sidecartridge.com could not be fetched. Is TheHulk connected to the internet?");
+    }
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+    esp_err_t err = httpd_resp_send(req, m.data, len);
+    free(m.data);
+    return err;
+}
+
+typedef struct {
+    int r;                              // 1: nothing came yet, then 0 or a CART_E_* error
+    char name[CART_NAME_LEN + 4];
+} download_t;
+
+static int to_card(void *ctx, const char *data, int len, int total)
+{
+    download_t *d = ctx;
+    if (d->r == 1)                      // the first part: now the size is known
+        d->r = cart_create(d->name, total);
+    if (!d->r)
+        d->r = cart_write(data, len);
+    return d->r;
+}
+
+// {"url": "http://roms.sidecartridge.com/Xenon.STC", "name": "XENON.STC"}
+static esp_err_t post_cart_download(httpd_req_t *req)
+{
+    cJSON *root = read_json(req);
+    if (!root)
+        return ESP_OK;
+    char url[256];
+    download_t st = { .r = 1 };
+    copy_str(url, sizeof(url), str_of(root, "url", ""));
+    copy_str(st.name, sizeof(st.name), str_of(root, "name", ""));
+    cJSON_Delete(root);
+    if (strncmp(url, CATALOG_HOST, strlen(CATALOG_HOST)) || strchr(url, '?'))
+        return send_error(req, "422 Unprocessable Entity", "INVALID_URL", "Only images from roms.sidecartridge.com.");
+    char check[CART_NAME_LEN + 4];
+    copy_str(check, sizeof(check), st.name);
+    if (strlen(st.name) >= CART_NAME_LEN || !cart_name_ok(check))
+        return send_cart_error(req, CART_E_NAME);
+    int len = fetch(url, CART_STC_SIZE, to_card, &st);
+    if (st.r == 1)                      // nothing came
+        return send_error(req, "502 Bad Gateway", "DOWNLOAD_FAILED",
+                          "The image could not be downloaded. Is TheHulk connected to the internet?");
+    int c = cart_close(!st.r && len > 0);
+    int r = st.r ? st.r : len < 0 ? CART_E_IO : c;
+    return r ? send_cart_error(req, r) : send_ok(req);
+}
+
 // --- Start --------------------------------------------------------------------------
 
 void web_start(void)
@@ -511,6 +747,13 @@ void web_start(void)
         { "/api/v1/setup/wifi",      HTTP_PUT,  put_setup_wifi,   NULL },
         { "/api/v1/setup/leave",     HTTP_POST, post_setup_leave, NULL },
         { "/api/v1/setup/start",     HTTP_POST, post_setup_start, NULL },
+        { "/api/v1/mode",            HTTP_PUT,  put_mode,         NULL },
+        { "/api/v1/carts",           HTTP_GET,  get_carts,        NULL },
+        { "/api/v1/carts",           HTTP_DELETE, delete_cart,    NULL },
+        { "/api/v1/carts/upload",    HTTP_POST, post_cart_upload, NULL },
+        { "/api/v1/carts/rename",    HTTP_PUT,  put_cart_rename,  NULL },
+        { "/api/v1/carts/catalog",   HTTP_GET,  get_catalog,      NULL },
+        { "/api/v1/carts/download",  HTTP_POST, post_cart_download, NULL },
     };
     for (size_t i = 0; i < sizeof(uris) / sizeof(uris[0]); i++)
         httpd_register_uri_handler(server, &uris[i]);

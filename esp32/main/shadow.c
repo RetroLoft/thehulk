@@ -54,6 +54,14 @@ void shadow_load_image(const uint8_t *img, size_t len)
         s_mem[len] = img[len - 1];   // odd length: high byte of the last word
 }
 
+void shadow_load_part(uint32_t offset, const uint8_t *data, size_t len)
+{
+    for (size_t i = 0; i + 1 < len && offset + i + 1 < HULK_ROM_SIZE; i += 2) {
+        s_mem[offset + i] = data[i + 1];
+        s_mem[offset + i + 1] = data[i];
+    }
+}
+
 // Shadow (CPU order) -> SPRAM (big-endian words); offset and len even
 static esp_err_t write_be(uint32_t offset, size_t len)
 {

@@ -8,6 +8,7 @@
 #include "driver/usb_serial_jtag.h"
 #include "esp_log.h"
 #include "board.h"
+#include "cart.h"
 #include "console.h"
 #include "netbridge.h"
 #include "settings.h"
@@ -99,7 +100,15 @@ static void console_task(void *arg)
                 down = xTaskGetTickCount();
                 long_done = false;
             } else if (!long_done && xTaskGetTickCount() - down < pdMS_TO_TICKS(SHORT_MS)) {
-                console_set_cart_off(!settings_cart_off());     // a short press, on release
+                // A short press, on release: leaves the cartridge emulator, otherwise
+                // switches the cartridge off or on
+                if (cart_emulator_on())
+                {
+                    cart_select(NULL);
+                    cart_apply_now();
+                }
+                else
+                    console_set_cart_off(!settings_cart_off());
             }
         }
         if (pressed && !long_done && xTaskGetTickCount() - down >= pdMS_TO_TICKS(LONG_MS)) {

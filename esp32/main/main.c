@@ -23,6 +23,7 @@
 #include "esp_system.h"
 #include "board.h"
 #include "bootrec.h"
+#include "cart.h"
 #include "fpga.h"
 #include "gemdrv.h"
 #include "hulk.h"
@@ -108,12 +109,18 @@ static void irq_start(void)
 }
 
 // Until /IRQ falls, at most a tick: the Atari waits for each answer
+static bool s_emulator;     // this power-on: a cartridge image instead of GEMDRIVE
+static void change_contents(void);
+
 static void wait_for_packet(void)
 {
     ulTaskNotifyTake(pdTRUE, 1);
+    // Other contents asked for: in every phase after power-on
+    if (fpga_power_present() && fpga_done() && cart_take_change())
+        change_contents();
 #ifndef HULK_CART_READONLY
     // GEMDRIVE and THEHULK.PRG read the network and clock state without a command
-    if (fpga_power_present() && fpga_done() && gemdrv_poll())
+    if (!s_emulator && fpga_power_present() && fpga_done() && gemdrv_poll())
         shadow_sync();
 #endif
 }
@@ -127,6 +134,8 @@ static void handle_packets(void)
         if (hulk_get_packet(&pkt) != ESP_OK)
             return;
         hulk_ack_packet();
+        if (s_emulator)
+            continue;               // a game that happens to read $FBABCD: no command
 #ifndef HULK_CART_READONLY
         sd_lock();
         gemdrv_command(&pkt);
@@ -172,17 +181,40 @@ static void log_rom3_ring(void)
     }
 }
 
+// The cartridge contents: the chosen image (emulator) or GEMDRIVE, into the shadow
+static void load_contents(void)
+{
+    cart_take_change();                 // what is asked for is loaded now
+    shadow_init();
+    // The cartridge emulator: the chosen image from the flash (~40 ms), else GEMDRIVE
+    s_emulator = cart_load_shadow();
+    status_led_emulator(s_emulator);
+    if (s_emulator) {
+        ESP_LOGI(TAG, "cartridge emulator: %s", cart_active_name());
+    } else {
+        shadow_load_image(rom_start, rom_len());
+#ifndef HULK_CART_READONLY
+        sd_lock();
+        gemdrv_init();
+        sd_unlock();
+#endif
+    }
+}
+
+// Another image chosen or the emulator left while the Atari is on: the new contents at
+// once, its next reset starts them. What runs from the cartridge now may crash.
+static void change_contents(void)
+{
+    load_contents();
+    shadow_write_range(0, HULK_ROM_SIZE);
+    ESP_LOGW(TAG, "cartridge contents changed: the Atari needs a reset");
+}
+
 // Wait for the Atari, configure the FPGA and enable the cartridge
 static void start_cartridge(void)
 {
     memset(&s_rec, 0, sizeof(s_rec));
-    shadow_init();
-    shadow_load_image(rom_start, rom_len());
-#ifndef HULK_CART_READONLY
-    sd_lock();
-    gemdrv_init();
-    sd_unlock();
-#endif
+    load_contents();
 #ifdef HULK_DIAG_HIGH
     uint16_t *rom3 = (uint16_t *)(shadow_base() + SHADOW_ROM3);
     for (int i = 0; i < 0x800; i++) {
@@ -199,6 +231,9 @@ static void start_cartridge(void)
             vTaskDelay(pdMS_TO_TICKS(5));
         vTaskDelay(pdMS_TO_TICKS(10));         // let the 1.2 V / 3.3 V regulators settle
     }
+    // Chosen on the web page while the Atari was off (TheHulk on USB power)
+    if (cart_reload_pending())
+        load_contents();
     s_rec.t_power = now_ms();
 
     for (;;) {
@@ -211,7 +246,8 @@ static void start_cartridge(void)
                 hulk_set_ctrl(0);
                 // The start of the image first: boot path (a 128 KB upload takes 263 ms,
                 // TOS reads the header ~0.5 s after power-on)
-                size_t done = (rom_len() + 1) & ~1u;
+                // An emulated cartridge too: TOS reads its header first, its code later
+                size_t done = s_emulator ? HULK_ROM_SIZE : (rom_len() + 1) & ~1u;
 #ifndef HULK_UPLOAD_ALL
                 if (done > 0x4000)
                     done = 0x4000;
@@ -236,7 +272,8 @@ static void start_cartridge(void)
                 shadow_write_range(done, HULK_ROM_SIZE - done);
                 ESP_LOGI(TAG, "cartridge %s (gateware v%d, image %u bytes, %lu ms)",
                          settings_cart_off() ? "loaded, switched off" : "enabled",
-                         version, (unsigned)rom_len(), (unsigned long)(now_ms() - s_rec.t_enabled));
+                         version, s_emulator ? HULK_ROM_SIZE : (unsigned)rom_len(),
+                         (unsigned long)(now_ms() - s_rec.t_enabled));
                 status_led_fatal(false);
                 return;
             }

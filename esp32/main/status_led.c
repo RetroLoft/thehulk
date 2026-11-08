@@ -19,7 +19,7 @@ static rmt_channel_handle_t s_chan;
 static rmt_encoder_handle_t s_enc;
 static volatile bool s_fatal;
 static volatile TickType_t s_activity, s_error, s_card;
-static volatile bool s_activity_seen, s_error_seen, s_card_seen, s_cart_off, s_setup;
+static volatile bool s_activity_seen, s_error_seen, s_card_seen, s_cart_off, s_setup, s_emulator;
 
 static void show(led_color_t color)
 {
@@ -38,9 +38,10 @@ static void show(led_color_t color)
 }
 
 // Short events go first: red an error (2 s), green the drive at work, purple a card was
-// mounted. Then the states: white setup mode (AP mode), yellow the cartridge switched off,
-// blue no Wi-Fi (yet). One state alone: white and blue blink, yellow stays on. Two or three
-// states: their colours in turn, half a second each (white-blue, white-yellow, ...).
+// mounted. Then the states: green the cartridge emulator (no GEMDRIVE, so no drive activity
+// either), white setup mode (AP mode), yellow the cartridge switched off, blue no Wi-Fi
+// (yet). One state alone: green, white and blue blink, yellow stays on. More states: their
+// colours in turn, half a second each (white-blue, green-yellow, ...).
 // Nothing: off.
 static void led_task(void *arg)
 {
@@ -57,8 +58,10 @@ static void led_task(void *arg)
         } else if (s_card_seen && now - s_card < pdMS_TO_TICKS(CARD_MS)) {
             color = LED_PURPLE;
         } else {
-            led_color_t states[3];
+            led_color_t states[4];
             int n = 0;
+            if (s_emulator)
+                states[n++] = LED_GREEN;
             if (s_setup)
                 states[n++] = LED_WHITE;
             if (s_cart_off)
@@ -127,6 +130,11 @@ void status_led_card(void)
 void status_led_cart_off(bool off)
 {
     s_cart_off = off;
+}
+
+void status_led_emulator(bool on)
+{
+    s_emulator = on;
 }
 
 void status_led_setup(bool on)

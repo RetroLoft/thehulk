@@ -60,6 +60,10 @@
   ul.slots { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
   ul.slots li { display: grid; grid-template-columns: 2.4em minmax(0, 1fr) auto; gap: 10px; align-items: center;
                 padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; }
+  .err-text { color: var(--err); font-weight: 600; }
+  .btnlike { display: inline-block; font: inherit; padding: 8px 14px; border-radius: 8px; cursor: pointer;
+             border: 1px solid var(--line); color: var(--accent); text-decoration: none; }
+  .kind-diagnostic { color: var(--warn); background: var(--warn-bg); }
   ul.slots li.free { padding: 4px 10px; color: var(--muted); }
   ul.slots li.disabled { opacity: .6; }
   .slotno { font-weight: 700; text-align: right; color: var(--muted); }
@@ -108,6 +112,7 @@
                       border-radius: 10px; padding: 14px; text-align: center; }
   dialog.ask .atari strong { display: block; font-size: 24px; letter-spacing: .5px; }
   dialog.ask .atari .now { margin-top: 6px; font-weight: 700; }
+  dialog.ask input { width: 100%; box-sizing: border-box; }
   dialog.ask .buttons { display: flex; gap: 8px; justify-content: flex-end; padding: 12px 20px;
                         border-top: 1px solid var(--line); }
   .offline { position: fixed; inset: 0; z-index: 100; background: rgba(0,0,0,.6);
@@ -163,11 +168,12 @@
   <div class="body">
     <h3 id="ask-title"></h3>
     <div id="ask-atari" class="atari hidden">
-      <strong>SWITCH OFF YOUR ATARI</strong>
-      <div>before you go on</div>
+      <strong id="ask-atari-big">SWITCH OFF YOUR ATARI</strong>
+      <div id="ask-atari-small">before you go on</div>
       <div id="ask-atari-now" class="now hidden">The Atari is on now.</div>
     </div>
     <div id="ask-text"></div>
+    <input type="text" id="ask-input" class="hidden" autocomplete="off" spellcheck="false">
   </div>
   <div class="buttons">
     <button class="secondary" id="ask-cancel" type="button">Cancel</button>
@@ -196,6 +202,7 @@
         <div class="switch">
           <span id="cartstate" class="badge off">–</span>
           <button id="carttoggle" type="button" disabled>…</button>
+          <button id="usegem" class="hidden" type="button">Use GEMDRIVE</button>
         </div>
         <div id="cartnote" class="muted small hidden">From the next reset of the Atari (switched off: from the next power-on).</div>
       </div>
@@ -203,11 +210,41 @@
         <div class="title">Floppy emulator</div>
         <div class="muted small">Coming later.</div>
       </div>
-      <div class="mode">
+      <div class="mode" id="mode-emu">
         <div class="title">Cartridge emulator</div>
-        <div class="muted small">Coming later.</div>
+        <div class="muted small">A game or tool cartridge from the SD card instead of GEMDRIVE.</div>
+        <div class="switch">
+          <span id="emustate" class="badge off">Off</span>
+          <a href="#carts" class="btnlike">Cartridges…</a>
+        </div>
+        <div id="emunote" class="small muted hidden"></div>
       </div>
     </div>
+  </section>
+</main>
+
+<!-- ============ Cartridges ============ -->
+<main id="carts" class="hidden">
+  <section>
+    <h2>Cartridge emulator</h2>
+    <p id="emu-now" class="muted">–</p>
+    <p class="small muted">The images are in <code>\CARTS</code> on the SD card. <strong>Use</strong> puts one in
+      the cartridge at once: press reset on the Atari to start it. A short press on button 1, or
+      <em>Use GEMDRIVE</em> on the front page, goes back to GEMDRIVE.</p>
+    <div id="carts-msg" class="banner hidden"></div>
+    <ul class="slots" id="cartlist" style="margin-top:8px"></ul>
+    <div class="row" style="margin-top:10px">
+      <label class="filebtn"><input type="file" id="upload" hidden><span class="secondary btnlike">Add an image…</span></label>
+      <span id="upstate" class="muted small"></span>
+    </div>
+  </section>
+  <section>
+    <h2>Catalogue</h2>
+    <p class="small muted">Cartridge images from roms.sidecartridge.com, the list SidecarTridge uses.
+      TheHulk downloads them to the SD card itself (it needs the internet for that).</p>
+    <div class="row"><button class="secondary" id="catload" type="button">Show the catalogue</button>
+      <input type="text" id="catfilter" class="hidden" placeholder="Filter: name or tag"></div>
+    <ul class="slots" id="catlist" style="margin-top:8px"></ul>
   </section>
 </main>
 
@@ -343,10 +380,19 @@ function render() {
   const on = s.cartridge.on;
   $("cartstate").textContent = on ? "On" : "Off";
   $("cartstate").className = "badge " + (on ? "active" : "off");
-  $("mode-cart").classList.toggle("active", on);
+  const emu = s.cartridge.emulator;
+  $("mode-cart").classList.toggle("active", on && !emu);
   $("carttoggle").textContent = on ? "Switch off" : "Switch on";
   $("carttoggle").disabled = false;
-  show($("cartnote"), s.atari_on);
+  show($("carttoggle"), !emu); show($("usegem"), emu);
+  show($("cartnote"), s.atari_on && !emu);
+  if (emu) { $("cartstate").textContent = "Not used"; $("cartstate").className = "badge off"; }
+  $("mode-emu").classList.toggle("active", emu);
+  $("emustate").textContent = emu ? s.cartridge.image : "Off";
+  $("emustate").className = "badge " + (emu ? "active" : "off");
+  const n = emuNote(s);
+  $("emunote").textContent = n.text; $("emunote").className = "small " + (n.bad ? "err-text" : "muted"); show($("emunote"), !!n.text);
+  if (location.hash === "#carts") { $("emu-now").textContent = n.text || "Not in use: the cartridge is GEMDRIVE."; $("emu-now").className = n.bad ? "err-text" : "muted"; }
   show($("setupnote"), s.wifi.setup);
   show($("nowifi"), !s.wifi.ip);
   $("nowifi-ssid").textContent = s.wifi.ssid ? "“" + s.wifi.ssid + "”" : "";
@@ -358,25 +404,32 @@ function render() {
   $("setupssid").textContent = "“" + s.wifi.setup_ssid + "”";
 }
 // Our own dialog instead of confirm()/alert(): { title, text (lines: \n\n), ok, cancel
-// (null: only OK), atari (switch the Atari off first), danger }. Resolves true for OK.
+// (null: only OK), atari (switch the Atari off first), reset (press reset afterwards),
+// danger, input (a text field with this value: resolves to the text) }. Resolves true for OK.
 function ask(o) {
   const d = $("ask");
   $("ask-title").textContent = o.title || "TheHulk";
   const t = $("ask-text"); t.textContent = "";
   String(o.text || "").split("\n\n").forEach(par => { const p = document.createElement("p"); p.textContent = par; t.appendChild(p); });
-  show($("ask-atari"), !!o.atari);
+  show($("ask-atari"), !!o.atari || !!o.reset);
+  $("ask-atari-big").textContent = o.reset ? "PRESS RESET ON YOUR ATARI" : "SWITCH OFF YOUR ATARI";
+  $("ask-atari-small").textContent = o.reset ? "to start it" : "before you go on";
   show($("ask-atari-now"), !!o.atari && !!(status && status.atari_on));
+  const inp = $("ask-input");
+  show(inp, o.input !== undefined);
+  inp.value = o.input !== undefined ? o.input : "";
   $("ask-ok").textContent = o.ok || "OK";
   $("ask-ok").className = o.danger ? "danger" : "";
   $("ask-cancel").textContent = o.cancel || "Cancel";
   show($("ask-cancel"), o.cancel !== null);
   return new Promise(resolve => {
     const done = v => { d.close(); resolve(v); };
-    $("ask-ok").onclick = () => done(true);
+    $("ask-ok").onclick = () => done(o.input !== undefined ? inp.value.trim() : true);
     $("ask-cancel").onclick = () => done(false);
+    inp.onkeydown = e => { if (e.key === "Enter") $("ask-ok").click(); };
     d.oncancel = e => { e.preventDefault(); done(false); };
     d.showModal();
-    $(o.cancel === null ? "ask-ok" : "ask-cancel").focus();
+    (o.input !== undefined ? inp : $(o.cancel === null ? "ask-ok" : "ask-cancel")).focus();
   });
 }
 const tell = (text, title) => ask({ title: title || "Something went wrong", text, cancel: null });
@@ -422,10 +475,11 @@ $("setupstart").onclick = async () => {
 
 // ---------- Views ----------
 function route() {
-  const set = location.hash === "#settings";
-  show($("front"), !set); show($("settings"), set);
+  const set = location.hash === "#settings", carts = location.hash === "#carts";
+  show($("front"), !set && !carts); show($("settings"), set); show($("carts"), carts);
   $("gear").toggleAttribute("aria-current", set);
   if (set) loadSettings(); else show($("savebar"), false);
+  if (carts) loadCarts();
 }
 window.addEventListener("hashchange", route);
 
@@ -655,6 +709,166 @@ async function okDrive(i) {
   cfg.drives[i] = d;
   show($("driveedit"), false); editing = -1;
   renderDrives(); markDirty();
+}
+
+// ---------- Cartridges ----------
+let carts = null;
+const kb = n => Math.round(n / 1024) + " KB" + (n % 1024 ? " + " + (n % 1024) : "");
+function cartsMsg(kind, text) { const m = $("carts-msg"); m.className = "banner " + kind; m.textContent = text; show(m, !!text); }
+async function loadCarts() {
+  try { carts = await api("GET", "/api/v1/carts"); } catch (e) { cartsMsg("err", e.message); return; }
+  cartsMsg(carts.card ? "" : "err", carts.card ? "" : "There is no SD card in TheHulk.");
+  const ul = $("cartlist"); ul.innerHTML = "";
+  if (carts.card && !carts.files.length)
+    ul.innerHTML = '<li class="free">No images yet: add one, or download one from the catalogue.</li>';
+  carts.files.forEach(f => {
+    const li = document.createElement("li");
+    const active = carts.emulator && f.name === carts.image;
+    li.innerHTML = '<span class="slotno">' + (active ? "▶" : "") + '</span><span><strong>' + esc(f.name) + '</strong> ' +
+      '<span class="muted small">' + kb(f.size) + '</span> ' +
+      (f.kind === "diagnostic" ? '<span class="badge kind-diagnostic" title="TOS starts it at once after a reset: start it with the reset button">reset start</span>' :
+       f.kind === "normal" ? "" : '<span class="badge off">' + esc(f.kind) + '</span>') + '</span>' +
+      '<span class="actions row"><button type="button" data-a="use"' + (f.kind === "bad" ? " disabled" : "") + '>Use</button>' +
+      '<button type="button" class="secondary" data-a="ren">Rename</button>' +
+      '<button type="button" class="danger" data-a="del">Delete</button></span>';
+    li.querySelector('[data-a=use]').onclick = () => useCart(f);
+    li.querySelector('[data-a=ren]').onclick = () => renameCart(f);
+    li.querySelector('[data-a=del]').onclick = () => deleteCart(f);
+    ul.appendChild(li);
+  });
+}
+// What the emulator is doing, in words: from what is really in the cartridge
+function emuNote(s) {
+  const c = s.cartridge;
+  if (c.busy) return { text: "Loading " + (c.emulator ? c.image : "GEMDRIVE") + "…" };
+  if (c.load_failed) return { bad: true, text: c.image + " could not be read from TheHulk's flash: GEMDRIVE is running. Choose the image again." };
+  if (!c.emulator) return { text: "" };
+  if (!s.atari_on) return { text: c.image + " is ready: it starts when the Atari is switched on." };
+  return { text: c.image + " is in the cartridge." };
+}
+// Until the image is written to the flash: a window that tells so, then the result
+async function waitLoaded(title) {
+  const d = $("ask");
+  $("ask-title").textContent = title;
+  $("ask-text").textContent = "Writing to TheHulk's flash, this takes a few seconds…";
+  show($("ask-atari"), false); show($("ask-input"), false);
+  show($("ask-cancel"), false); show($("ask-ok"), false);
+  d.oncancel = e => e.preventDefault();
+  d.showModal();
+  const until = Date.now() + 90000;
+  let st = null;
+  await new Promise(r => setTimeout(r, 300));
+  while (Date.now() < until) {
+    try { st = await api("GET", "/api/v1/status"); if (!st.cartridge.busy) break; st = null; } catch (e) { st = null; }
+    await new Promise(r => setTimeout(r, 400));
+  }
+  d.close();
+  show($("ask-ok"), true);
+  if (st) { status = st; render(); }
+  return st;
+}
+// The result of a choice: what to do on the Atari now
+function loadedText(what, st, diag) {
+  return st.atari_on ? what + " is in the cartridge now."
+       : diag ? "Switch the Atari on, then press reset: at power-on TheHulk is too late for this type of image."
+       : "Switch the Atari on to start it.";
+}
+async function useCart(f) {
+  if (!await ask({ title: "Use " + f.name + "?",
+      text: "TheHulk puts " + f.name + " in the cartridge instead of what is there now. What runs from the cartridge may crash." +
+            (carts.emulator ? "" : "\n\nNo drives, no clock and no STinG until you go back to GEMDRIVE."),
+      ok: "Use " + f.name })) return;
+  try { await api("PUT", "/api/v1/mode", { mode: "emulator", image: f.name }); } catch (e) { return tell(e.message); }
+  const st = await waitLoaded("Loading " + f.name);
+  loadCarts();
+  if (!st) return tell("TheHulk did not report that the image is loaded. Check the state on the page.");
+  if (st.cartridge.error) return tell(st.cartridge.error);
+  if (st.cartridge.load_failed) return tell(f.name + " could not be read from TheHulk's flash: GEMDRIVE is running.");
+  const diag = f.kind === "diagnostic";
+  ask({ title: f.name + " is loaded", cancel: null, reset: st.atari_on || diag, text: loadedText(f.name, st, diag) });
+}
+$("usegem").onclick = async () => {
+  if (!await ask({ title: "Back to GEMDRIVE?",
+      text: "TheHulk puts GEMDRIVE back in the cartridge. What runs from the cartridge may crash.", ok: "Use GEMDRIVE" })) return;
+  try { await api("PUT", "/api/v1/mode", { mode: "gemdrive" }); } catch (e) { return tell(e.message); }
+  const st = await waitLoaded("Loading GEMDRIVE");
+  if (!st) return tell("TheHulk did not report that GEMDRIVE is loaded. Check the state on the page.");
+  ask({ title: "GEMDRIVE is loaded", cancel: null, reset: st.atari_on, text: loadedText("GEMDRIVE", st, false) });
+};
+async function renameCart(f) {
+  const to = await ask({ title: "Rename " + f.name, text: "An 8.3 name ending in .STC, .IMG, .BIN or .ROM.", input: f.name, ok: "Rename" });
+  if (!to || to.toUpperCase() === f.name) return;
+  try { await api("PUT", "/api/v1/carts/rename", { from: f.name, to: to.toUpperCase() }); } catch (e) { return tell(e.message); }
+  loadCarts();
+}
+async function deleteCart(f) {
+  if (!await ask({ title: "Delete " + f.name + "?", text: "The image is removed from the SD card." +
+      (carts.emulator && f.name === carts.image ? "\n\nIt stays in the cartridge until you choose another one or go back to GEMDRIVE." : ""),
+      ok: "Delete", danger: true })) return;
+  try { await api("DELETE", "/api/v1/carts?name=" + encodeURIComponent(f.name)); } catch (e) { return tell(e.message); }
+  loadCarts();
+}
+// "Rick Dangerous" + ".STC" -> RICKDANG.STC, not yet on the card
+function name83(name, ext) {
+  ext = (ext || "BIN").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 3);
+  if (!["STC", "IMG", "BIN", "ROM", "CAR"].includes(ext)) ext = "BIN";
+  let base = name.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 8) || "CART";
+  const taken = new Set((carts && carts.files || []).map(f => f.name));
+  for (let i = 1; taken.has(base + "." + ext) && i < 100; i++)
+    base = base.slice(0, 8 - String(i).length) + i;
+  return base + "." + ext;
+}
+$("upload").onchange = async () => {
+  const file = $("upload").files[0];
+  $("upload").value = "";
+  if (!file) return;
+  if (file.size > 131076) return tell(file.name + " is " + kb(file.size) + ": a cartridge image is 128 KB at most (an .STC 128 KB + 4).");
+  const dot = file.name.lastIndexOf(".");
+  const name = await ask({ title: "Add " + file.name, text: "The name on the SD card (8.3):",
+      input: name83(dot > 0 ? file.name.slice(0, dot) : file.name, dot > 0 ? file.name.slice(dot + 1) : ""), ok: "Add" });
+  if (!name) return;
+  $("upstate").textContent = "Sending…";
+  try {
+    const r = await fetch("/api/v1/carts/upload?name=" + encodeURIComponent(name.toUpperCase()),
+                          { method: "POST", headers: { "Content-Type": "application/octet-stream" }, body: file });
+    let d = {}; try { d = await r.json(); } catch (e) {}
+    if (!r.ok) throw new Error(d.message || "HTTP " + r.status);
+  } catch (e) { $("upstate").textContent = ""; return tell(e.message); }
+  $("upstate").textContent = "";
+  loadCarts();
+};
+let catalog = [];
+$("catload").onclick = async () => {
+  $("catload").disabled = true; $("catload").textContent = "Fetching…";
+  try { catalog = await api("GET", "/api/v1/carts/catalog", undefined, 20000); }
+  catch (e) { $("catload").disabled = false; $("catload").textContent = "Show the catalogue"; return tell(e.message); }
+  show($("catload"), false); show($("catfilter"), true);
+  renderCatalog();
+};
+$("catfilter").oninput = () => renderCatalog();
+function renderCatalog() {
+  const q = $("catfilter").value.trim().toLowerCase();
+  const ul = $("catlist"); ul.innerHTML = "";
+  catalog.filter(r => !q || r.name.toLowerCase().includes(q) || (r.tags || []).some(t => t.includes(q))).forEach(r => {
+    const li = document.createElement("li");
+    li.innerHTML = '<span class="slotno"></span><span><strong>' + esc(r.name) + '</strong> <span class="muted small">' + r.size_kb + ' KB · ' +
+      esc((r.tags || []).join(", ")) + '</span><br><span class="small">' + esc(r.description || "") + '</span></span>' +
+      '<span class="actions row"><button type="button" class="secondary">Download</button></span>';
+    li.querySelector("button").onclick = () => downloadCart(r, li.querySelector("button"));
+    ul.appendChild(li);
+  });
+}
+async function downloadCart(r, btn) {
+  const file = decodeURIComponent(r.url.split("/").pop());
+  const dot = file.lastIndexOf(".");
+  const name = await ask({ title: "Download " + r.name, text: "The name on the SD card (8.3):",
+      input: name83(r.name, dot > 0 ? file.slice(dot + 1) : ""), ok: "Download" });
+  if (!name) return;
+  btn.disabled = true; btn.textContent = "Downloading…";
+  try { await api("POST", "/api/v1/carts/download", { url: r.url, name: name.toUpperCase() }, 30000); }
+  catch (e) { btn.disabled = false; btn.textContent = "Download"; return tell(e.message); }
+  btn.textContent = "On the SD card";
+  loadCarts();
 }
 
 route();

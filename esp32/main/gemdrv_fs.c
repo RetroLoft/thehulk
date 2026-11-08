@@ -11,6 +11,7 @@
 #include <strings.h>
 #include <time.h>
 #include "atari_charset.h"
+#include "cart.h"
 #include "ff.h"
 #include "flashfs.h"
 #include "esp_log.h"
@@ -651,6 +652,8 @@ static int16_t next_match(search_t *s, uint8_t *dta_out)
             continue;
         if (s->flash_root && is_builtin_name(fno.fname))
             continue;                   // the built-in file goes first
+        if (s->flash_root && (!strcasecmp(fno.fname, CART_CACHE_NAME) || !strcasecmp(fno.fname, CART_TEMP_NAME)))
+            continue;                   // the chosen cartridge image (cart.c): not shown
         if (match(s, fno.fname) && attribs_ok(s->attribs, fno.fattrib)) {
             fill_dta(dta_out, &fno);
             return GEMDOS_EOK;

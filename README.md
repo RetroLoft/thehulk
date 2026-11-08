@@ -15,7 +15,7 @@ built around an ESP32-S3 and a Lattice iCE40UP5K FPGA. Successor of SideTNFS.
 | `atari/sting/` | `CART_NET.STX`: STinG driver for TheHulk's network bridge (C) |
 | `atari/stingins/` | `STINGINS.TOS`: STinG installer on the flash drive, see [docs/NETWORK.md](docs/NETWORK.md) |
 | `tools/` | Development helpers |
-| `docs/` | Documentation: [hardware](docs/hardware-v2.md), [drives](docs/DRIVES.md), [internet with STinG](docs/NETWORK.md), [web page](docs/WEB.md) |
+| `docs/` | Documentation: [hardware](docs/hardware-v2.md), [drives](docs/DRIVES.md), [internet with STinG](docs/NETWORK.md), [web page](docs/WEB.md), [cartridge emulator](docs/CARTRIDGE.md) |
 
 ## Building
 

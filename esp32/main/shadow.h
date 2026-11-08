@@ -16,6 +16,8 @@ esp_err_t shadow_init(void);
 uintptr_t shadow_base(void);
 // Copies the cartridge image (big-endian, as the Atari reads it) to the start.
 void shadow_load_image(const uint8_t *img, size_t len);
+// The same for a part at 'offset' (even, len even): an image read in pieces
+void shadow_load_part(uint32_t offset, const uint8_t *data, size_t len);
 // Writes [offset, offset + len) to the SPRAM without comparing (boot path).
 esp_err_t shadow_write_range(uint32_t offset, size_t len);
 // Writes what changed to the SPRAM: the first block of ROM3 and the status area, and the
