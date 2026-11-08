@@ -12,7 +12,7 @@ atari/gemdrive/build/
 atari/gemdrive/dist/
 atari/config/*.PRG
 
-# KiCad (see also hardware/v2/.gitignore)
+# KiCad (see also hardware/dev-v2/.gitignore)
 fp-info-cache
 *-backups/
 _autosave-*

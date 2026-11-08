@@ -1,5 +1,5 @@
 // TheHulk board v2: ESP32-S3-DevKitC-1 (N16R8) pin assignment
-// (hardware/v2/thehulk.kicad_sch)
+// (hardware/dev-v2/thehulk.kicad_sch)
 #pragma once
 
 #include "driver/gpio.h"

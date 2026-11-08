@@ -1,6 +1,6 @@
 # TheHulk hardware v2
 
-KiCad project: `hardware/v2/`. Production files (JLCPCB): `hardware/v2/production/`.
+KiCad project: `hardware/dev-v2/`. Production files (JLCPCB): `hardware/dev-v2/production/`.
 
 ## Overview
 
