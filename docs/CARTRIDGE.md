@@ -55,4 +55,8 @@ The page marks the second kind with **reset start**.
 TOS looks for the diagnostic type in its very first instructions. At power-on TheHulk is
 not ready that early, so switch the Atari on and then press reset.
 
-Tested on a Mega STE.
+## Which Atari
+
+Tested on a Mega STE and a Falcon. TheHulk works the same on both, but many cartridges were
+made for the ST and its 68000, and some of them do not run on a Falcon. That is the
+cartridge, not TheHulk.
