@@ -24,8 +24,14 @@
   header { display: flex; align-items: center; justify-content: space-between; gap: 12px;
            padding: 12px 16px; background: var(--card); border-bottom: 1px solid var(--line); }
   header h1 { margin: 0; font-size: 20px; }
-  header h1 a { color: inherit; text-decoration: none; }
+  header h1 a { color: inherit; text-decoration: none; display: inline-flex; align-items: center; gap: 8px; }
   header h1 .dev { color: var(--muted); font-weight: 400; font-size: 15px; margin-left: 6px; }
+  .tabs { position: sticky; top: 0; z-index: 5; display: flex; justify-content: center; gap: 4px;
+          padding: 0 8px; background: var(--card); border-bottom: 1px solid var(--line); }
+  .tabs a { flex: 0 1 150px; padding: 10px 4px 8px; text-align: center; color: var(--muted);
+            text-decoration: none; font-weight: 600; border-bottom: 3px solid transparent; }
+  .tabs a:hover { color: var(--text); }
+  .tabs a[aria-current] { color: var(--accent); border-bottom-color: var(--accent); }
   main { max-width: 920px; margin: 0 auto; padding: 16px; display: grid; gap: 16px; }
   section { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 16px; }
   h2 { margin: 0 0 12px; font-size: 17px; }
@@ -130,18 +136,17 @@
 </head>
 <body>
 <header>
-  <h1><a href="#">TheHulk</a><span id="devname" class="dev"></span></h1>
+  <h1><a href="#"><img id="logo" alt="" width="30" height="30">TheHulk</a><span id="devname" class="dev"></span></h1>
   <div class="hdr-right">
     <span id="conn" class="conn">Connecting…</span>
-    <a id="gear" class="iconbtn" href="#settings" title="Settings" aria-label="Settings">
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-           stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-        <circle cx="12" cy="12" r="3"/>
-        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
-      </svg>
-    </a>
   </div>
 </header>
+<nav class="tabs" aria-label="Pages">
+  <a href="#" data-tab="">Home</a>
+  <a href="#floppies" data-tab="#floppies">Floppies</a>
+  <a href="#carts" data-tab="#carts">Cartridges</a>
+  <a href="#settings" data-tab="#settings">Settings</a>
+</nav>
 
 <div class="wrap">
   <div id="offline" class="offline hidden" role="alert">
@@ -236,7 +241,7 @@
 </main>
 
 <!-- ============ Cartridges ============ -->
-<main id="carts" class="hidden">
+<main id="view-carts" class="hidden">
   <section>
     <h2>Cartridge emulator</h2>
     <div class="row"><span id="emu-now" class="muted">–</span>
@@ -262,7 +267,7 @@
 </main>
 
 <!-- ============ Floppies ============ -->
-<main id="floppies" class="hidden">
+<main id="view-floppies" class="hidden">
   <section>
     <h2>Floppy emulator</h2>
     <div class="row"><span id="flop-now" class="muted">–</span>
@@ -284,7 +289,7 @@
 </main>
 
 <!-- ============ Settings ============ -->
-<main id="settings" class="hidden">
+<main id="view-settings" class="hidden">
   <div class="banner warn">Saved settings take effect after the next <strong>reset of the Atari</strong>.</div>
   <div id="msg" class="banner hidden" role="status"></div>
 
@@ -439,7 +444,7 @@ function render() {
   $("flopstate").className = "badge " + (fl.on ? "active" : "off");
   $("flopnote").textContent = fn.text; $("flopnote").className = "small " + (fn.bad ? "err-text" : "muted"); show($("flopnote"), !!fn.text);
   show($("flopoff"), fl.on);
-  if (fl.on && !fl.drives) { $("cartstate").textContent = "Floppy only"; $("cartstate").className = "badge off"; }
+  if (fl.on && !fl.drives) { $("cartstate").textContent = "Floppy only"; $("cartstate").className = "badge off"; $("mode-cart").classList.remove("active"); }
   if (location.hash === "#floppies") { $("flop-now").textContent = fn.text || "No floppy in the drive."; $("flop-now").className = fn.bad ? "err-text" : "muted"; }
   show($("updatenote"), !!(s.update && s.update.available));
   if (s.update && s.update.available) { $("update-latest").textContent = s.update.latest; $("update-own").textContent = s.version; }
@@ -526,8 +531,12 @@ $("setupstart").onclick = async () => {
 // ---------- Views ----------
 function route() {
   const set = location.hash === "#settings", carts = location.hash === "#carts", flop = location.hash === "#floppies";
-  show($("front"), !set && !carts && !flop); show($("settings"), set); show($("carts"), carts); show($("floppies"), flop);
-  $("gear").toggleAttribute("aria-current", set);
+  show($("front"), !set && !carts && !flop); show($("view-settings"), set); show($("view-carts"), carts); show($("view-floppies"), flop);
+  window.scrollTo(0, 0);        // the browser went to the element with this id
+  const here = set || carts || flop ? location.hash : "";
+  document.querySelectorAll(".tabs a").forEach(a => {
+    if (a.dataset.tab === here) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current");
+  });
   if (set) loadSettings(); else show($("savebar"), false);
   if (carts) loadCarts();
   if (flop) loadFloppies();
@@ -1017,6 +1026,7 @@ $("flopupload").onchange = async () => {
   loadFloppies();
 };
 
+$("logo").src = document.querySelector('link[rel="icon"]').href;   // the favicon: no second copy
 route();
 poll();
 </script>

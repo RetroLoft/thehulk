@@ -1,7 +1,7 @@
 # The floppy emulator
 
 TheHulk can show the Atari a disk image as drive `A:` or `B:`. You choose it on the
-[web page](WEB.md), under **Floppies...** on the front page. The Atari boots from it like
+[web page](WEB.md), on the **Floppies** tab. The Atari boots from it like
 from a real disk.
 
 **An SD card is required.** The images are on the card, and TheHulk cannot use one without

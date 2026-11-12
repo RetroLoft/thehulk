@@ -12,15 +12,17 @@ There is no password. The page is meant for a private home network.
 
 ## What is on it
 
+The tabs at the top go to **Home**, **Floppies**, **Cartridges** and **Settings**.
+
 **The front page**
 - The state: the Atari on or off, the Wi-Fi network and signal, the address, and the
   firmware version (from `version.txt`).
 - **Mode**: switches the cartridge on or off, like a short press on button 1 (see
-  [The cartridge switched off](#the-cartridge-switched-off)). **Cartridges...** opens the
-  [cartridge emulator](CARTRIDGE.md), **Floppies...** the [floppy emulator](FLOPPY.md). Both
+  [The cartridge switched off](#the-cartridge-switched-off)), and shows what the
+  [cartridge emulator](CARTRIDGE.md) and the [floppy emulator](FLOPPY.md) are doing. Both
   need an SD card.
 
-**Settings** (the gear at the top right)
+**Settings** (a tab at the top)
 - **Device name**: tells several cartridges apart. The name is used:
   - on the page;
   - as the host name (`thehulk.local`);

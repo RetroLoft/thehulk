@@ -1,8 +1,7 @@
 # The cartridge emulator
 
 Instead of GEMDRIVE, TheHulk can show the Atari an ordinary cartridge: a game, a tool or a
-diagnostic ROM. You choose it on the [web page](WEB.md), under **Cartridges...** on the
-front page.
+diagnostic ROM. You choose it on the [web page](WEB.md), on the **Cartridges** tab.
 
 While an image is in the cartridge, GEMDRIVE is not there: no TheHulk drives, no
 `THEHULK.PRG`, no clock and no STinG. The web page and AP mode keep working.
@@ -35,7 +34,7 @@ work on the card.
 3. Atari on: press **reset**. Atari off: switch it on.
 
 What runs from the cartridge at that moment may crash when the contents change; the reset
-follows anyway. **Use GEMDRIVE** on the front page goes back the same way.
+follows anyway. **Use GEMDRIVE** goes back the same way.
 
 A **short press on button 1** also goes back to GEMDRIVE, at once. After a reset the Atari
 has its drives again. (With GEMDRIVE in the cartridge, the same press switches the
