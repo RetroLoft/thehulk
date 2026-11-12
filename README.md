@@ -7,7 +7,8 @@ built around an ESP32-S3 and a Lattice iCE40UP5K FPGA. Successor of SideTNFS.
 
 | Path | Contents |
 |---|---|
-| `hardware/dev-v2/` | KiCad project and JLCPCB production files |
+| `hardware/dev-v2/` | KiCad project and JLCPCB production files of the development board (ESP32-S3-DevKitC) |
+| `hardware/prod-v2/` | KiCad project of the production board (ESP32-S3 module on the board, native USB, not ordered yet) |
 | `fpga/` | FPGA gateware (Verilog), pin constraints, simulation |
 | `esp32/` | ESP32-S3 firmware (ESP-IDF); embeds the bitstream, GEMDRIVE and the built-in files of the flash drive |
 | `atari/gemdrive/` | GEMDRIVE: the cartridge code the Atari runs (68000 assembly) |
