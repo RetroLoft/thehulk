@@ -4364,7 +4364,7 @@
 			)
 		)
 	)
-	(footprint "Button_Switch_SMD:SW_SPST_B3S-1000"
+	(footprint "footprints:SW_Tactile_6x6_SMD_H9.5"
 		(layer "F.Cu")
 		(uuid "365bc1d7-0b85-4eea-afa5-00b4080c8597")
 		(at 123.975 110.75 180)
@@ -4631,7 +4631,7 @@
 			(uuid "d8dfb56c-e323-499a-b7f2-200931d990ce")
 		)
 		(embedded_fonts no)
-		(model "${KICAD9_3DMODEL_DIR}/Button_Switch_SMD.3dshapes/SW_SPST_B3S-1000.step"
+		(model "${KIPRJMOD}/3dmodels/SW_Tactile_6x6_SMD_H9.5.wrl"
 			(offset
 				(xyz 0 0 0)
 			)
