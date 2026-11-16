@@ -7557,8 +7557,8 @@
 		)
 	)
 	(rectangle
-		(start 296.164 194.31)
-		(end 398.78 275.336)
+		(start 219.71 19.05)
+		(end 398.78 97.79)
 		(stroke
 			(width 0)
 			(type default)
@@ -7569,8 +7569,8 @@
 		(uuid 3365d9d2-1401-4461-ab8d-09adb737ede4)
 	)
 	(rectangle
-		(start 219.71 19.05)
-		(end 398.78 97.79)
+		(start 296.164 194.31)
+		(end 398.78 275.336)
 		(stroke
 			(width 0)
 			(type default)
@@ -7979,7 +7979,7 @@
 		(uuid "562771d0-db8d-44de-84ec-fd9866fa1933")
 	)
 	(junction
-		(at 342.9 215.9)
+		(at 342.9 226.06)
 		(diameter 0)
 		(color 0 0 0 0)
 		(uuid "5724fdd2-adc8-477f-bee8-238ba987a146")
@@ -8201,11 +8201,11 @@
 		(uuid "b4fe3c87-ec57-42fa-b7c9-533dfee79359")
 	)
 	(no_connect
-		(at 359.41 247.65)
+		(at 368.3 257.81)
 		(uuid "cc55e0e5-534c-4572-8474-f722e7c2d934")
 	)
 	(no_connect
-		(at 359.41 215.9)
+		(at 359.41 226.06)
 		(uuid "d2504fc7-333c-4f29-bc57-31a9f5555fc8")
 	)
 	(no_connect
@@ -8298,7 +8298,7 @@
 	)
 	(wire
 		(pts
-			(xy 342.9 215.9) (xy 342.9 247.65)
+			(xy 342.9 226.06) (xy 342.9 257.81)
 		)
 		(stroke
 			(width 0)
@@ -8868,6 +8868,16 @@
 	)
 	(wire
 		(pts
+			(xy 342.9 257.81) (xy 353.06 257.81)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "3f4f8122-f29b-4783-836d-6274d0ce2046")
+	)
+	(wire
+		(pts
 			(xy 189.23 165.1) (xy 189.23 172.72)
 		)
 		(stroke
@@ -9208,7 +9218,7 @@
 	)
 	(wire
 		(pts
-			(xy 341.63 215.9) (xy 342.9 215.9)
+			(xy 341.63 226.06) (xy 342.9 226.06)
 		)
 		(stroke
 			(width 0)
@@ -9338,7 +9348,7 @@
 	)
 	(wire
 		(pts
-			(xy 342.9 215.9) (xy 344.17 215.9)
+			(xy 342.9 226.06) (xy 344.17 226.06)
 		)
 		(stroke
 			(width 0)
@@ -10065,16 +10075,6 @@
 			(type default)
 		)
 		(uuid "b3fa0780-f82a-499e-9ba7-f92dad4f25f8")
-	)
-	(wire
-		(pts
-			(xy 342.9 247.65) (xy 344.17 247.65)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "b48dd4aa-e495-4fbb-b60c-78397718d023")
 	)
 	(wire
 		(pts
@@ -11086,7 +11086,7 @@
 	)
 	(global_label "GND"
 		(shape input)
-		(at 351.79 255.27 180)
+		(at 360.68 265.43 270)
 		(fields_autoplaced yes)
 		(effects
 			(font
@@ -11096,7 +11096,7 @@
 		)
 		(uuid "1b02b56c-cb9b-418e-8652-62f6d96ef4ab")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 337.7377 255.27 0)
+			(at 360.68 272.2857 90)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -11240,7 +11240,7 @@
 	)
 	(global_label "GND"
 		(shape input)
-		(at 351.79 223.52 180)
+		(at 351.79 233.68 270)
 		(fields_autoplaced yes)
 		(effects
 			(font
@@ -11250,7 +11250,7 @@
 		)
 		(uuid "20334451-2639-4c26-834d-337565f9a392")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 337.7377 223.52 0)
+			(at 351.79 240.5357 90)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -11570,7 +11570,7 @@
 	)
 	(global_label "+5V_SYS"
 		(shape input)
-		(at 323.85 205.74 180)
+		(at 323.85 215.9 180)
 		(fields_autoplaced yes)
 		(effects
 			(font
@@ -11580,7 +11580,7 @@
 		)
 		(uuid "2cbce045-35b0-40c2-a102-5ee95e7c165a")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 309.7977 205.74 0)
+			(at 309.7977 215.9 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -12054,22 +12054,22 @@
 	)
 	(global_label "GND"
 		(shape input)
-		(at 384.81 219.71 0)
+		(at 384.81 229.87 270)
 		(fields_autoplaced yes)
 		(effects
 			(font
 				(size 1.27 1.27)
 			)
-			(justify left)
+			(justify right)
 		)
 		(uuid "43736bcb-85d8-4ad3-a3c7-d7f320a20a0c")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 394.7499 219.71 0)
+			(at 384.81 236.7257 90)
 			(effects
 				(font
 					(size 1.27 1.27)
 				)
-				(justify left)
+				(justify right)
 				(hide yes)
 			)
 		)
@@ -12516,22 +12516,22 @@
 	)
 	(global_label "+5V_SYS"
 		(shape input)
-		(at 351.79 240.03 180)
+		(at 360.68 250.19 90)
 		(fields_autoplaced yes)
 		(effects
 			(font
 				(size 1.27 1.27)
 			)
-			(justify right)
+			(justify left)
 		)
 		(uuid "6790f133-9a25-4131-83fc-041233f83610")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 337.7377 240.03 0)
+			(at 360.68 238.8591 90)
 			(effects
 				(font
 					(size 1.27 1.27)
 				)
-				(justify right)
+				(justify left)
 				(hide yes)
 			)
 		)
@@ -12912,29 +12912,29 @@
 	)
 	(global_label "+5V_SYS"
 		(shape input)
-		(at 351.79 208.28 180)
+		(at 351.79 210.82 90)
 		(fields_autoplaced yes)
 		(effects
 			(font
 				(size 1.27 1.27)
 			)
-			(justify right)
+			(justify left)
 		)
 		(uuid "7780b60c-61db-4993-8220-e6f53b527ac9")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 337.7377 208.28 0)
+			(at 351.79 199.4891 90)
 			(effects
 				(font
 					(size 1.27 1.27)
 				)
-				(justify right)
+				(justify left)
 				(hide yes)
 			)
 		)
 	)
 	(global_label "+5V_SYS"
 		(shape input)
-		(at 384.81 212.09 0)
+		(at 384.81 222.25 90)
 		(fields_autoplaced yes)
 		(effects
 			(font
@@ -12944,7 +12944,7 @@
 		)
 		(uuid "7899cd18-3746-4282-aca4-4d9d9a86190c")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 394.7499 212.09 0)
+			(at 384.81 210.9191 90)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -13330,7 +13330,7 @@
 	)
 	(global_label "STATUS_LED"
 		(shape input)
-		(at 313.69 215.9 180)
+		(at 313.69 226.06 180)
 		(fields_autoplaced yes)
 		(effects
 			(font
@@ -13340,7 +13340,7 @@
 		)
 		(uuid "93055ea7-08b7-44bc-9b95-51e72698175d")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 299.6377 215.9 0)
+			(at 299.6377 226.06 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -13506,22 +13506,22 @@
 	)
 	(global_label "+5V_SYS"
 		(shape input)
-		(at 369.57 212.09 180)
+		(at 369.57 222.25 90)
 		(fields_autoplaced yes)
 		(effects
 			(font
 				(size 1.27 1.27)
 			)
-			(justify right)
+			(justify left)
 		)
 		(uuid "9e0df0a9-7d80-474e-8b80-15b014f29808")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 355.5177 212.09 0)
+			(at 369.57 210.9191 90)
 			(effects
 				(font
 					(size 1.27 1.27)
 				)
-				(justify right)
+				(justify left)
 				(hide yes)
 			)
 		)
@@ -14496,7 +14496,7 @@
 	)
 	(global_label "GND"
 		(shape input)
-		(at 369.57 219.71 180)
+		(at 369.57 229.87 270)
 		(fields_autoplaced yes)
 		(effects
 			(font
@@ -14506,7 +14506,7 @@
 		)
 		(uuid "da3685a7-043c-4fee-9d86-f41415a14b1b")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 355.5177 219.71 0)
+			(at 369.57 236.7257 90)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -14540,7 +14540,7 @@
 	)
 	(global_label "GND"
 		(shape input)
-		(at 323.85 226.06 180)
+		(at 323.85 236.22 270)
 		(fields_autoplaced yes)
 		(effects
 			(font
@@ -14550,7 +14550,7 @@
 		)
 		(uuid "dc5d3587-e3c0-44b5-9e22-d425a80fc6f8")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 309.7977 226.06 0)
+			(at 323.85 243.0757 90)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -14892,7 +14892,7 @@
 	)
 	(global_label "GND"
 		(shape input)
-		(at 328.93 205.74 0)
+		(at 328.93 215.9 0)
 		(fields_autoplaced yes)
 		(effects
 			(font
@@ -14902,7 +14902,7 @@
 		)
 		(uuid "f783fc1c-a9bf-4a3f-b3e3-e93a1d19b0e8")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 338.8699 205.74 0)
+			(at 338.8699 215.9 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -15309,7 +15309,7 @@
 	)
 	(symbol
 		(lib_id "thehulk:WS2812D-F5")
-		(at 351.79 247.65 0)
+		(at 360.68 257.81 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -15318,7 +15318,7 @@
 		(fields_autoplaced yes)
 		(uuid "05241096-9f41-46d9-b9e5-1801d514909f")
 		(property "Reference" "D6"
-			(at 355.6 246.3799 0)
+			(at 364.49 256.5399 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -15327,7 +15327,7 @@
 			)
 		)
 		(property "Value" "WS2812D-F5"
-			(at 355.6 248.9199 0)
+			(at 364.49 259.0799 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -15336,7 +15336,7 @@
 			)
 		)
 		(property "Footprint" "footprints:LED_D5.0mm-4_WS2812D-F5"
-			(at 352.7552 251.46 0)
+			(at 361.6452 261.62 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -15345,7 +15345,7 @@
 			)
 		)
 		(property "Datasheet" "https://www.lcsc.com/product-detail/C190565.html"
-			(at 351.79 247.65 0)
+			(at 360.68 257.81 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -15354,7 +15354,7 @@
 			)
 		)
 		(property "Description" "Optional round 5 mm status LED for a case, not fitted; parallel to D5 (same colour)"
-			(at 351.79 247.65 0)
+			(at 360.68 257.81 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -15363,7 +15363,7 @@
 			)
 		)
 		(property "LCSC Part" "C190565"
-			(at 351.79 247.65 0)
+			(at 360.68 257.81 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -15394,16 +15394,15 @@
 	)
 	(symbol
 		(lib_id "74xGxx:74AHCT1G125")
-		(at 328.93 215.9 0)
+		(at 328.93 226.06 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
 		(on_board yes)
 		(dnp no)
-		(fields_autoplaced yes)
 		(uuid "08459e6a-2e5b-4e07-8229-22f9e6003960")
 		(property "Reference" "U12"
-			(at 332.74 214.6299 0)
+			(at 326.136 226.314 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -15412,7 +15411,7 @@
 			)
 		)
 		(property "Value" "SN74AHCT1G125DBVR"
-			(at 332.74 217.1699 0)
+			(at 315.214 233.68 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -15421,7 +15420,7 @@
 			)
 		)
 		(property "Footprint" "Package_TO_SOT_SMD:SOT-23-5"
-			(at 329.8952 219.71 0)
+			(at 329.8952 229.87 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -15430,7 +15429,7 @@
 			)
 		)
 		(property "Datasheet" "https://www.ti.com/lit/ds/symlink/sn74ahct1g125.pdf"
-			(at 328.93 215.9 0)
+			(at 328.93 226.06 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -15439,7 +15438,7 @@
 			)
 		)
 		(property "Description" "Level shifter 3.3 V to 5 V for the status LED data (GPIO48)"
-			(at 328.93 215.9 0)
+			(at 328.93 226.06 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -15448,7 +15447,7 @@
 			)
 		)
 		(property "LCSC Part" "C7484"
-			(at 328.93 215.9 0)
+			(at 328.93 226.06 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -25911,7 +25910,7 @@
 	)
 	(symbol
 		(lib_id "Device:C")
-		(at 384.81 215.9 0)
+		(at 384.81 226.06 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -25920,7 +25919,7 @@
 		(fields_autoplaced yes)
 		(uuid "bf855957-ca87-4b8b-8e66-099a8ea394c1")
 		(property "Reference" "C39"
-			(at 388.62 214.6299 0)
+			(at 388.62 224.7899 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -25929,7 +25928,7 @@
 			)
 		)
 		(property "Value" "100nF"
-			(at 388.62 217.1699 0)
+			(at 388.62 227.3299 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -25938,7 +25937,7 @@
 			)
 		)
 		(property "Footprint" "Capacitor_SMD:C_0402_1005Metric"
-			(at 385.7752 219.71 0)
+			(at 385.7752 229.87 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -25947,7 +25946,7 @@
 			)
 		)
 		(property "Datasheet" "~"
-			(at 384.81 215.9 0)
+			(at 384.81 226.06 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -25956,7 +25955,7 @@
 			)
 		)
 		(property "Description" "Unpolarized capacitor"
-			(at 384.81 215.9 0)
+			(at 384.81 226.06 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -25965,7 +25964,7 @@
 			)
 		)
 		(property "LCSC Part" "C1525"
-			(at 385.7752 219.71 0)
+			(at 385.7752 229.87 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -26134,7 +26133,7 @@
 	)
 	(symbol
 		(lib_id "Device:C")
-		(at 369.57 215.9 0)
+		(at 369.57 226.06 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -26143,7 +26142,7 @@
 		(fields_autoplaced yes)
 		(uuid "c3da06e5-314b-4205-adef-2b7bcaf4d71e")
 		(property "Reference" "C38"
-			(at 373.38 214.6299 0)
+			(at 373.38 224.7899 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -26152,7 +26151,7 @@
 			)
 		)
 		(property "Value" "100nF"
-			(at 373.38 217.1699 0)
+			(at 373.38 227.3299 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -26161,7 +26160,7 @@
 			)
 		)
 		(property "Footprint" "Capacitor_SMD:C_0402_1005Metric"
-			(at 370.5352 219.71 0)
+			(at 370.5352 229.87 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -26170,7 +26169,7 @@
 			)
 		)
 		(property "Datasheet" "~"
-			(at 369.57 215.9 0)
+			(at 369.57 226.06 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -26179,7 +26178,7 @@
 			)
 		)
 		(property "Description" "Unpolarized capacitor"
-			(at 369.57 215.9 0)
+			(at 369.57 226.06 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -26188,7 +26187,7 @@
 			)
 		)
 		(property "LCSC Part" "C1525"
-			(at 370.5352 219.71 0)
+			(at 370.5352 229.87 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -27627,16 +27626,15 @@
 	)
 	(symbol
 		(lib_id "LED:WS2812B-2020")
-		(at 351.79 215.9 0)
+		(at 351.79 226.06 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
 		(on_board yes)
 		(dnp no)
-		(fields_autoplaced yes)
 		(uuid "dbc1ce61-4376-4f38-a7c5-884b94c846be")
 		(property "Reference" "D5"
-			(at 355.6 214.6299 0)
+			(at 353.568 222.504 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -27645,7 +27643,7 @@
 			)
 		)
 		(property "Value" "WS2812B-2020"
-			(at 355.6 217.1699 0)
+			(at 345.44 232.664 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -27654,7 +27652,7 @@
 			)
 		)
 		(property "Footprint" "LED_SMD:LED_WS2812B-2020_PLCC4_2.0x2.0mm"
-			(at 352.7552 219.71 0)
+			(at 352.7552 229.87 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -27663,7 +27661,7 @@
 			)
 		)
 		(property "Datasheet" "https://www.lcsc.com/product-detail/C52917434.html"
-			(at 351.79 215.9 0)
+			(at 351.79 226.06 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -27672,7 +27670,7 @@
 			)
 		)
 		(property "Description" "RGB LED with integrated controller, status LED on GPIO48"
-			(at 351.79 215.9 0)
+			(at 351.79 226.06 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -27681,7 +27679,7 @@
 			)
 		)
 		(property "LCSC Part" "C52917434"
-			(at 351.79 215.9 0)
+			(at 351.79 226.06 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -28677,6 +28675,85 @@
 			(project "thehulk"
 				(path "/06ffb7b9-d0dd-4aa6-8ea6-93758c8a9df5"
 					(reference "#PWR050")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "Device:R")
+		(at 351.79 214.63 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(uuid "e7de1b4c-561d-4dc4-ac1c-95fb8f1b4c16")
+		(property "Reference" "R16"
+			(at 354.33 213.3599 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Value" "0R"
+			(at 354.33 215.8999 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Footprint" "Resistor_SMD:R_0805_2012Metric"
+			(at 350.012 214.63 90)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" "~"
+			(at 351.79 214.63 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" "Resistor (bridge: remove to switch the internal LED D5 off)"
+			(at 351.79 214.63 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "LCSC Part" "C17477"
+			(at 350.012 214.63 90)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(pin "2"
+			(uuid "0df24085-156e-4847-bb55-f1e79c2d5221")
+		)
+		(pin "1"
+			(uuid "a3c8006b-db7f-497c-bb8d-a1da2d827ae2")
+		)
+		(instances
+			(project "thehulk"
+				(path "/06ffb7b9-d0dd-4aa6-8ea6-93758c8a9df5"
+					(reference "R16")
 					(unit 1)
 				)
 			)
