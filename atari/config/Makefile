@@ -13,7 +13,9 @@ LDFLAGS    = -s -lgem
 TARGET      = THEHULK.PRG
 TARGET_DEMO = DEMOTNFS.PRG
 SRCS        = src/main.c src/drive.c src/netconfig.c src/rtcconfig.c src/dialog.c src/sidetnfs_probe.c
-INSTALLDIR  = /mnt/retroloft/retro/Atari.ST/CONFIG
+# Where 'make install' copies the program, e.g. the folder Hatari mounts as a drive:
+#   make install INSTALLDIR=~/hatari/C/CONFIG
+INSTALLDIR ?=
 
 # Files to copy on 'make install' (extend as the project grows).
 # README.TXT ships on the SETTINGS disk alongside THEHULK.PRG and MUST
@@ -34,6 +36,7 @@ demo: $(SRCS)
 	$(CC) $(CFLAGS) -DDEMO_MODE -o $(TARGET_DEMO) $(SRCS) $(LDFLAGS)
 
 install: $(DISTFILES)
+	@test -n "$(INSTALLDIR)" || { echo "set INSTALLDIR, e.g. make install INSTALLDIR=~/hatari/C"; exit 1; }
 	cp -v $(DISTFILES) $(INSTALLDIR)/
 
 clean:

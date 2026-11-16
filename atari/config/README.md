@@ -98,16 +98,13 @@ installing anywhere, run `make SIDETNFS.PRG` instead.
 
 ### `INSTALLDIR` -- where a build gets copied to
 
-The `Makefile`'s `INSTALLDIR` variable is this repository's own local
-working directory for testing: after every successful `make`, both
-`SIDETNFS.PRG` and `README.TXT` are copied there (see `DISTFILES`),
-so they can be picked up by a real Atari/emulator's SETTINGS disk without
-a manual copy step every time. It defaults to this project's own share
-(`/mnt/retroloft/retro/Atari.ST/CONFIG`), which almost certainly doesn't
-exist on your machine -- change it at the top of the `Makefile` to
-wherever *your* Atari or emulator (e.g. Hatari) mounts its SETTINGS disk
-from, or drop the `install` dependency from the `all` target entirely if
-you'd rather just build.
+`make install` copies `THEHULK.PRG` and `README.TXT` to `INSTALLDIR`, for example the
+folder that Hatari or a real Atari's drive is shared from. There is no default; pass it on
+the command line:
+
+```
+make install INSTALLDIR=~/hatari/C/CONFIG
+```
 
 ## Clean
 
