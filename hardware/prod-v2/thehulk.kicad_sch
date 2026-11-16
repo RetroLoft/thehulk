@@ -29490,7 +29490,7 @@
 				)
 			)
 		)
-		(property "Footprint" "Connector_USB:USB_Micro-B_Molex_47346-0001"
+		(property "Footprint" "footprints:USB_Micro-B_C10418"
 			(at 250.19 332.74 0)
 			(effects
 				(font
@@ -29499,7 +29499,7 @@
 				(hide yes)
 			)
 		)
-		(property "Datasheet" "https://www.molex.com/content/dam/molex/molex-dot-com/products/automated/en-us/salesdrawingpdf/473/47346/473460001_sd.pdf"
+		(property "Datasheet" "https://www.lcsc.com/product-detail/C10418.html"
 			(at 250.19 332.74 0)
 			(effects
 				(font
@@ -29517,7 +29517,7 @@
 				(hide yes)
 			)
 		)
-		(property "LCSC Part" "C132560"
+		(property "LCSC Part" "C10418"
 			(at 250.19 332.74 0)
 			(effects
 				(font
@@ -29526,7 +29526,7 @@
 				(hide yes)
 			)
 		)
-		(property "MPN" "Molex 47346-0001"
+		(property "MPN" "Jing Extension 920-E52A2021S10100"
 			(at 250.19 332.74 0)
 			(effects
 				(font

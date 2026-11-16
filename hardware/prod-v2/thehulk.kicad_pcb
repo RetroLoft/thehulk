@@ -1435,7 +1435,7 @@
 			)
 		)
 		(property "LCSC Part" "C231329"
-			(at 0 0 -90)
+			(at 0 0 270)
 			(unlocked yes)
 			(layer "F.Fab")
 			(hide yes)
@@ -3262,6 +3262,310 @@
 		)
 		(embedded_fonts no)
 		(model "${KICAD9_3DMODEL_DIR}/Capacitor_SMD.3dshapes/C_0603_1608Metric.step"
+			(offset
+				(xyz 0 0 0)
+			)
+			(scale
+				(xyz 1 1 1)
+			)
+			(rotate
+				(xyz 0 0 0)
+			)
+		)
+	)
+	(footprint "footprints:USB_Micro-B_C10418"
+		(layer "F.Cu")
+		(uuid "27d7e274-c8e8-46a9-98d1-5612c5a47cfd")
+		(at 140.74 76.216 180)
+		(descr "Micro USB B receptacle, horizontal, SMD with 4 plated shell legs, LCSC C10418 (Jing Extension 920-E52A2021S10100). Pads from the EasyEDA footprint. The flange front is 4.0 mm in front of the origin; place it like the Molex 47346-0001 by putting the flange on the same line.")
+		(tags "USB Micro B C10418")
+		(property "Reference" "J3"
+			(at 0 -3.064 0)
+			(layer "F.SilkS")
+			(uuid "745d78d2-804f-40f9-a8c9-b82e862b94b4")
+			(effects
+				(font
+					(size 1 1)
+					(thickness 0.15)
+				)
+			)
+		)
+		(property "Value" "USB_B_Micro"
+			(at 0 5.3 180)
+			(layer "F.Fab")
+			(uuid "43aad0d2-6d0a-42d1-b147-c78fd6a532d2")
+			(effects
+				(font
+					(size 1 1)
+					(thickness 0.15)
+				)
+			)
+		)
+		(property "Datasheet" "https://www.lcsc.com/product-detail/C10418.html"
+			(at 0 0 180)
+			(layer "F.Fab")
+			(hide yes)
+			(uuid "fc986cb6-70de-4586-b0e0-9a9744d3951e")
+			(effects
+				(font
+					(size 1.27 1.27)
+					(thickness 0.15)
+				)
+			)
+		)
+		(property "Description" "USB Micro Type B connector"
+			(at 0 0 180)
+			(layer "F.Fab")
+			(hide yes)
+			(uuid "43267c32-cd46-4e36-bc55-c0d8afb3df41")
+			(effects
+				(font
+					(size 1.27 1.27)
+					(thickness 0.15)
+				)
+			)
+		)
+		(property "LCSC Part" "C10418"
+			(at 0 0 0)
+			(layer "F.SilkS")
+			(uuid "2a8a403c-89f4-4307-b85e-c47a3e2bee3b")
+			(effects
+				(font
+					(size 1.27 1.27)
+					(thickness 0.15)
+				)
+			)
+		)
+		(property "MPN" "Jing Extension 920-E52A2021S10100"
+			(at 0 0 0)
+			(layer "F.SilkS")
+			(uuid "40506136-1d96-4211-bc6c-d6fa227f0d4f")
+			(effects
+				(font
+					(size 1.27 1.27)
+					(thickness 0.15)
+				)
+			)
+		)
+		(path "/fb90f104-9739-41f2-9bdd-3124d2aca985")
+		(sheetname "/")
+		(sheetfile "thehulk.kicad_sch")
+		(attr smd)
+		(fp_line
+			(start 3.85 -1.7)
+			(end 3.85 0.2)
+			(stroke
+				(width 0.12)
+				(type solid)
+			)
+			(layer "F.SilkS")
+			(uuid "4d497538-ee4c-4dd2-8584-65cf505d9ae2")
+		)
+		(fp_line
+			(start 3.18 -1.7)
+			(end 3.85 -1.7)
+			(stroke
+				(width 0.12)
+				(type solid)
+			)
+			(layer "F.SilkS")
+			(uuid "eb775031-8617-4486-b9f0-5cdb74451f3d")
+		)
+		(fp_line
+			(start -3.18 -1.7)
+			(end -3.85 -1.7)
+			(stroke
+				(width 0.12)
+				(type solid)
+			)
+			(layer "F.SilkS")
+			(uuid "8fa27e93-4faa-49a4-aa57-753da9a3d220")
+		)
+		(fp_line
+			(start -3.85 -1.7)
+			(end -3.85 0.2)
+			(stroke
+				(width 0.12)
+				(type solid)
+			)
+			(layer "F.SilkS")
+			(uuid "93e21984-9626-44ef-aad7-3c5feb89a209")
+		)
+		(fp_line
+			(start 4.5 4.5)
+			(end -4.5 4.5)
+			(stroke
+				(width 0.05)
+				(type solid)
+			)
+			(layer "F.CrtYd")
+			(uuid "7c493fac-ca4a-438f-998d-633889bf9400")
+		)
+		(fp_line
+			(start 4.5 -2.3)
+			(end 4.5 4.5)
+			(stroke
+				(width 0.05)
+				(type solid)
+			)
+			(layer "F.CrtYd")
+			(uuid "0e89a39a-9516-4cae-af9f-782d20cbee8e")
+		)
+		(fp_line
+			(start -4.5 4.5)
+			(end -4.5 -2.3)
+			(stroke
+				(width 0.05)
+				(type solid)
+			)
+			(layer "F.CrtYd")
+			(uuid "82cde99b-3980-4d5d-8fa4-3ce41008d442")
+		)
+		(fp_line
+			(start -4.5 -2.3)
+			(end 4.5 -2.3)
+			(stroke
+				(width 0.05)
+				(type solid)
+			)
+			(layer "F.CrtYd")
+			(uuid "ea409065-0a9a-453c-a029-403035cbbd4d")
+		)
+		(fp_line
+			(start 4 4)
+			(end -4 4)
+			(stroke
+				(width 0.1)
+				(type solid)
+			)
+			(layer "F.Fab")
+			(uuid "8a3f41e5-8960-4544-9ba2-3036717c46e9")
+		)
+		(fp_line
+			(start 4 -1.6)
+			(end 4 4)
+			(stroke
+				(width 0.1)
+				(type solid)
+			)
+			(layer "F.Fab")
+			(uuid "64efb7e0-35ec-4b47-8650-4336f03fe959")
+		)
+		(fp_line
+			(start -4 4)
+			(end -4 -1.6)
+			(stroke
+				(width 0.1)
+				(type solid)
+			)
+			(layer "F.Fab")
+			(uuid "9f9d4f1e-9e8e-4c95-954f-69cb5cf5c601")
+		)
+		(fp_line
+			(start -4 -1.6)
+			(end 4 -1.6)
+			(stroke
+				(width 0.1)
+				(type solid)
+			)
+			(layer "F.Fab")
+			(uuid "e522a985-f464-4ccf-b846-df264eb48479")
+		)
+		(fp_text user "Flange front at y = 4.0"
+			(at 0 3.2 180)
+			(layer "Cmts.User")
+			(uuid "c7d698a4-7dfa-46ec-95e5-deefd80193d6")
+			(effects
+				(font
+					(size 0.3 0.3)
+					(thickness 0.05)
+				)
+			)
+		)
+		(fp_text user "${REFERENCE}"
+			(at 0 1.2 180)
+			(layer "F.Fab")
+			(uuid "7ab2723e-2b4a-410b-8f51-c43b9cc61bdc")
+			(effects
+				(font
+					(size 0.8 0.8)
+					(thickness 0.12)
+				)
+			)
+		)
+		(pad "1" smd rect
+			(at -1.3 -1.3 180)
+			(size 0.4 1.25)
+			(layers "F.Cu" "F.Mask" "F.Paste")
+			(net 101 "VBUS")
+			(uuid "c4d39750-530e-4c79-a4e9-394092f98355")
+		)
+		(pad "2" smd rect
+			(at -0.65 -1.3 180)
+			(size 0.4 1.25)
+			(layers "F.Cu" "F.Mask" "F.Paste")
+			(net 103 "USB_DN")
+			(uuid "ece4cbb3-dbd8-49cf-a997-3b1b3d03a6be")
+		)
+		(pad "3" smd rect
+			(at 0 -1.3 180)
+			(size 0.4 1.25)
+			(layers "F.Cu" "F.Mask" "F.Paste")
+			(net 102 "USB_DP")
+			(uuid "4a6af228-d13f-40b2-b7db-007132aa1e1e")
+		)
+		(pad "4" smd rect
+			(at 0.65 -1.3 180)
+			(size 0.4 1.25)
+			(layers "F.Cu" "F.Mask" "F.Paste")
+			(net 104 "unconnected-(J3-ID-Pad4)")
+			(uuid "663958d9-a373-4a23-aef0-35ac67f8043d")
+		)
+		(pad "5" smd rect
+			(at 1.3 -1.3 180)
+			(size 0.4 1.25)
+			(layers "F.Cu" "F.Mask" "F.Paste")
+			(net 2 "GND")
+			(uuid "2b1ae7c7-3c1a-4246-802f-a0f031973ea0")
+		)
+		(pad "6" thru_hole oval
+			(at -3.6 1.325 180)
+			(size 1.1 1.9)
+			(drill oval 0.6 1.4)
+			(layers "*.Cu" "*.Mask")
+			(remove_unused_layers no)
+			(net 2 "GND")
+			(uuid "56a92012-17b5-4247-8642-27211af6a06f")
+		)
+		(pad "6" thru_hole circle
+			(at -2.425 -1.325 180)
+			(size 1.2 1.2)
+			(drill 0.7)
+			(layers "*.Cu" "*.Mask")
+			(remove_unused_layers no)
+			(net 2 "GND")
+			(uuid "06ddee38-a61d-46ab-801f-01b8fa50c3e8")
+		)
+		(pad "6" thru_hole circle
+			(at 2.425 -1.325 180)
+			(size 1.2 1.2)
+			(drill 0.7)
+			(layers "*.Cu" "*.Mask")
+			(remove_unused_layers no)
+			(net 2 "GND")
+			(uuid "6e2f32e0-f9d3-479d-9c16-ad15be14fb7b")
+		)
+		(pad "6" thru_hole oval
+			(at 3.6 1.325 180)
+			(size 1.1 1.9)
+			(drill oval 0.6 1.4)
+			(layers "*.Cu" "*.Mask")
+			(remove_unused_layers no)
+			(net 2 "GND")
+			(uuid "7555be52-a615-4327-876d-86e745cc8850")
+		)
+		(embedded_fonts no)
+		(model "${KIPRJMOD}/3dmodels/USB_Micro-B_C10418.wrl"
 			(offset
 				(xyz 0 0 0)
 			)
@@ -5770,7 +6074,7 @@
 			)
 		)
 		(property "LCSC Part" "C14663"
-			(at 0 0 -90)
+			(at 0 0 270)
 			(unlocked yes)
 			(layer "F.Fab")
 			(hide yes)
@@ -6336,7 +6640,7 @@
 			)
 		)
 		(property "LCSC Part" "C14663"
-			(at 0 0 -90)
+			(at 0 0 270)
 			(unlocked yes)
 			(layer "F.Fab")
 			(hide yes)
@@ -6800,7 +7104,7 @@
 			)
 		)
 		(property "LCSC Part" "C25900"
-			(at 0 0 -90)
+			(at 0 0 270)
 			(unlocked yes)
 			(layer "F.Fab")
 			(hide yes)
@@ -7385,7 +7689,7 @@
 			)
 		)
 		(property "LCSC Part" "C25900"
-			(at 0 0 -90)
+			(at 0 0 270)
 			(unlocked yes)
 			(layer "F.Fab")
 			(hide yes)
@@ -8103,7 +8407,7 @@
 			)
 		)
 		(property "LCSC Part" "C22962"
-			(at 0 0 -90)
+			(at 0 0 270)
 			(unlocked yes)
 			(layer "F.Fab")
 			(hide yes)
@@ -9105,7 +9409,7 @@
 			)
 		)
 		(property "LCSC Part" "C19702"
-			(at 0 0 -90)
+			(at 0 0 270)
 			(unlocked yes)
 			(layer "F.Fab")
 			(hide yes)
@@ -12978,7 +13282,7 @@
 			)
 		)
 		(property "LCSC Part" "C15849"
-			(at 0 0 -90)
+			(at 0 0 270)
 			(unlocked yes)
 			(layer "F.Fab")
 			(hide yes)
@@ -13132,7 +13436,7 @@
 			)
 		)
 		(property "LCSC Part" "C25900"
-			(at 0 0 -90)
+			(at 0 0 270)
 			(unlocked yes)
 			(layer "F.Fab")
 			(hide yes)
@@ -14284,375 +14588,6 @@
 			)
 		)
 	)
-	(footprint "Connector_USB:USB_Micro-B_Molex_47346-0001"
-		(layer "F.Cu")
-		(uuid "d195ff7a-e09e-45d2-b5fc-de852a3d755b")
-		(at 140.74 75.98 180)
-		(descr "Micro USB B receptable with flange, bottom-mount, SMD, right-angle (http://www.molex.com/pdm_docs/sd/473460001_sd.pdf)")
-		(tags "Micro B USB SMD")
-		(property "Reference" "J3"
-			(at 0 -3.3 0)
-			(layer "F.SilkS")
-			(uuid "7490422d-d97b-44be-bf22-c092aab10b62")
-			(effects
-				(font
-					(size 1 1)
-					(thickness 0.15)
-				)
-			)
-		)
-		(property "Value" "USB_B_Micro"
-			(at 0 4.6 0)
-			(layer "F.Fab")
-			(uuid "626ae43b-ce5b-4875-a7b2-607a2c46461c")
-			(effects
-				(font
-					(size 1 1)
-					(thickness 0.15)
-				)
-			)
-		)
-		(property "Datasheet" "https://www.molex.com/content/dam/molex/molex-dot-com/products/automated/en-us/salesdrawingpdf/473/47346/473460001_sd.pdf"
-			(at 0 0 180)
-			(unlocked yes)
-			(layer "F.Fab")
-			(hide yes)
-			(uuid "720857b5-d964-4658-920f-926045e40323")
-			(effects
-				(font
-					(size 1.27 1.27)
-					(thickness 0.15)
-				)
-			)
-		)
-		(property "Description" "USB Micro Type B connector"
-			(at 0 0 180)
-			(unlocked yes)
-			(layer "F.Fab")
-			(hide yes)
-			(uuid "f508d645-7d25-4cc2-bfe1-d71b5924f9e8")
-			(effects
-				(font
-					(size 1.27 1.27)
-					(thickness 0.15)
-				)
-			)
-		)
-		(property "LCSC Part" "C132560"
-			(at 0 0 180)
-			(unlocked yes)
-			(layer "F.Fab")
-			(hide yes)
-			(uuid "fd9f2471-f655-4c72-859f-2fd08f5a2aa0")
-			(effects
-				(font
-					(size 1 1)
-					(thickness 0.15)
-				)
-			)
-		)
-		(property "MPN" "Molex 47346-0001"
-			(at 0 0 180)
-			(unlocked yes)
-			(layer "F.Fab")
-			(hide yes)
-			(uuid "453e60db-39dc-409f-91ff-fe795fcf62be")
-			(effects
-				(font
-					(size 1 1)
-					(thickness 0.15)
-				)
-			)
-		)
-		(property ki_fp_filters "USB*Micro*B*")
-		(path "/fb90f104-9739-41f2-9bdd-3124d2aca985")
-		(sheetname "/")
-		(sheetfile "thehulk.kicad_sch")
-		(attr smd)
-		(fp_line
-			(start 3.81 2.34)
-			(end 3.81 2.6)
-			(stroke
-				(width 0.12)
-				(type solid)
-			)
-			(layer "F.SilkS")
-			(uuid "0917666b-f4e5-4bae-b3f6-ee929021317a")
-		)
-		(fp_line
-			(start 3.81 -1.71)
-			(end 3.81 0.06)
-			(stroke
-				(width 0.12)
-				(type solid)
-			)
-			(layer "F.SilkS")
-			(uuid "5caf393c-6a03-4b33-a99f-7535b787a695")
-		)
-		(fp_line
-			(start 3.81 -1.71)
-			(end 3.43 -1.71)
-			(stroke
-				(width 0.12)
-				(type solid)
-			)
-			(layer "F.SilkS")
-			(uuid "5d0ffe2e-36e6-48ab-a652-a5bc01860fdb")
-		)
-		(fp_line
-			(start -3.81 2.6)
-			(end -3.81 2.34)
-			(stroke
-				(width 0.12)
-				(type solid)
-			)
-			(layer "F.SilkS")
-			(uuid "1426abcd-3272-4e63-8b8a-304e43d1d43e")
-		)
-		(fp_line
-			(start -3.81 0.06)
-			(end -3.81 -1.71)
-			(stroke
-				(width 0.12)
-				(type solid)
-			)
-			(layer "F.SilkS")
-			(uuid "0326fe6e-4708-45ef-9688-6de502147508")
-		)
-		(fp_line
-			(start -3.81 -1.71)
-			(end -3.43 -1.71)
-			(stroke
-				(width 0.12)
-				(type solid)
-			)
-			(layer "F.SilkS")
-			(uuid "dd83ee34-28c9-4788-b9b5-b67a97288a4c")
-		)
-		(fp_line
-			(start 4.7 3.85)
-			(end -4.7 3.85)
-			(stroke
-				(width 0.05)
-				(type solid)
-			)
-			(layer "F.CrtYd")
-			(uuid "ef4e398c-d0fd-4b94-9eac-932fa5d077bd")
-		)
-		(fp_line
-			(start 4.7 -2.65)
-			(end 4.7 3.85)
-			(stroke
-				(width 0.05)
-				(type solid)
-			)
-			(layer "F.CrtYd")
-			(uuid "a5685a8d-08c1-484d-b69b-a167c4f4d814")
-		)
-		(fp_line
-			(start -4.7 3.85)
-			(end -4.7 -2.65)
-			(stroke
-				(width 0.05)
-				(type solid)
-			)
-			(layer "F.CrtYd")
-			(uuid "f2f1afdd-3a00-47c1-a06b-1af92c289c0b")
-		)
-		(fp_line
-			(start -4.7 -2.65)
-			(end 4.7 -2.65)
-			(stroke
-				(width 0.05)
-				(type solid)
-			)
-			(layer "F.CrtYd")
-			(uuid "31b9e6db-98eb-4771-acfc-e8ff1a7776e8")
-		)
-		(fp_line
-			(start 3.75 3.35)
-			(end -3.75 3.35)
-			(stroke
-				(width 0.1)
-				(type solid)
-			)
-			(layer "F.Fab")
-			(uuid "36a87a87-416b-4bdf-b42d-93dd38fe455b")
-		)
-		(fp_line
-			(start 3.75 -1.65)
-			(end 3.75 3.35)
-			(stroke
-				(width 0.1)
-				(type solid)
-			)
-			(layer "F.Fab")
-			(uuid "aed4ba97-568e-4e42-b830-0a02e123e6ce")
-		)
-		(fp_line
-			(start -3.25 2.65)
-			(end 3.25 2.65)
-			(stroke
-				(width 0.1)
-				(type solid)
-			)
-			(layer "F.Fab")
-			(uuid "273023e8-cbfd-435d-86be-2c5ed8b99cfc")
-		)
-		(fp_line
-			(start -3.75 3.35)
-			(end -3.75 -1.65)
-			(stroke
-				(width 0.1)
-				(type solid)
-			)
-			(layer "F.Fab")
-			(uuid "224a655a-6300-49de-9832-bb22b15865ab")
-		)
-		(fp_line
-			(start -3.75 -1.65)
-			(end 3.75 -1.65)
-			(stroke
-				(width 0.1)
-				(type solid)
-			)
-			(layer "F.Fab")
-			(uuid "e522531a-c9a3-4b4a-b1f6-1f301be8c87b")
-		)
-		(fp_text user "PCB Edge"
-			(at 0 2.67 0)
-			(layer "Dwgs.User")
-			(uuid "bd7aebfc-fecf-4257-97d3-453480bb647a")
-			(effects
-				(font
-					(size 0.4 0.4)
-					(thickness 0.04)
-				)
-			)
-		)
-		(fp_text user "${REFERENCE}"
-			(at 0 1.2 180)
-			(layer "F.Fab")
-			(uuid "53366879-a21e-43cf-b722-e3d5f9fd2fcd")
-			(effects
-				(font
-					(size 1 1)
-					(thickness 0.15)
-				)
-			)
-		)
-		(pad "1" smd rect
-			(at -1.3 -1.46 180)
-			(size 0.45 1.38)
-			(layers "F.Cu" "F.Mask" "F.Paste")
-			(net 101 "VBUS")
-			(pinfunction "VBUS")
-			(pintype "power_out")
-			(uuid "a5cea3ec-a37d-4dc0-9942-872c59c3f7e7")
-		)
-		(pad "2" smd rect
-			(at -0.65 -1.46 180)
-			(size 0.45 1.38)
-			(layers "F.Cu" "F.Mask" "F.Paste")
-			(net 103 "USB_DN")
-			(pinfunction "D-")
-			(pintype "bidirectional")
-			(uuid "529c2bb5-304b-4c28-b247-8c3159c93255")
-		)
-		(pad "3" smd rect
-			(at 0 -1.46 180)
-			(size 0.45 1.38)
-			(layers "F.Cu" "F.Mask" "F.Paste")
-			(net 102 "USB_DP")
-			(pinfunction "D+")
-			(pintype "bidirectional")
-			(uuid "3b8b1c74-24c7-4976-a9a9-2604336b6bf4")
-		)
-		(pad "4" smd rect
-			(at 0.65 -1.46 180)
-			(size 0.45 1.38)
-			(layers "F.Cu" "F.Mask" "F.Paste")
-			(net 104 "unconnected-(J3-ID-Pad4)")
-			(pinfunction "ID")
-			(pintype "passive+no_connect")
-			(uuid "401893ca-42a9-4f96-81f9-3d479bc560f9")
-		)
-		(pad "5" smd rect
-			(at 1.3 -1.46 180)
-			(size 0.45 1.38)
-			(layers "F.Cu" "F.Mask" "F.Paste")
-			(net 2 "GND")
-			(pinfunction "GND")
-			(pintype "power_out")
-			(uuid "0bb7a272-e8d9-421e-af7f-c45b1eafe775")
-		)
-		(pad "6" smd rect
-			(at -3.375 1.2 180)
-			(size 1.65 1.3)
-			(layers "F.Cu" "F.Mask" "F.Paste")
-			(net 2 "GND")
-			(pinfunction "Shield")
-			(pintype "passive")
-			(uuid "a39dd437-76c7-4bba-80d0-35b12a471bb8")
-		)
-		(pad "6" smd rect
-			(at -2.4875 -1.375 180)
-			(size 1.425 1.55)
-			(layers "F.Cu" "F.Mask" "F.Paste")
-			(net 2 "GND")
-			(pinfunction "Shield")
-			(pintype "passive")
-			(uuid "7e5eb50a-08c6-4cd8-8dbb-279da98a8670")
-		)
-		(pad "6" smd rect
-			(at -1.15 1.2 180)
-			(size 1.8 1.9)
-			(layers "F.Cu" "F.Mask" "F.Paste")
-			(net 2 "GND")
-			(pinfunction "Shield")
-			(pintype "passive")
-			(uuid "10180ab5-e4b9-449c-a7e4-4035cc6ecce1")
-		)
-		(pad "6" smd rect
-			(at 1.55 1.2 180)
-			(size 1 1.9)
-			(layers "F.Cu" "F.Mask" "F.Paste")
-			(net 2 "GND")
-			(pinfunction "Shield")
-			(pintype "passive")
-			(uuid "cf20f80c-0463-4c38-9ef3-7ac54b542002")
-		)
-		(pad "6" smd rect
-			(at 2.4875 -1.375 180)
-			(size 1.425 1.55)
-			(layers "F.Cu" "F.Mask" "F.Paste")
-			(net 2 "GND")
-			(pinfunction "Shield")
-			(pintype "passive")
-			(uuid "d377dd21-018a-435c-bd25-ee21ad343793")
-		)
-		(pad "6" smd rect
-			(at 3.375 1.2 180)
-			(size 1.65 1.3)
-			(layers "F.Cu" "F.Mask" "F.Paste")
-			(net 2 "GND")
-			(pinfunction "Shield")
-			(pintype "passive")
-			(uuid "734b441b-9436-4a0b-b5c0-ef775b4c77a8")
-		)
-		(embedded_fonts no)
-		(model "${KICAD9_3DMODEL_DIR}/Connector_USB.3dshapes/USB_Micro-B_Molex_47346-0001.step"
-			(offset
-				(xyz 0 0 0)
-			)
-			(scale
-				(xyz 1 1 1)
-			)
-			(rotate
-				(xyz 0 0 0)
-			)
-		)
-	)
 	(footprint "footprints:LED_D5.0mm-4_WS2812D-F5"
 		(layer "F.Cu")
 		(uuid "d94ad3db-6c18-4c42-84ba-df4a054eedaa")
@@ -14890,7 +14825,7 @@
 			)
 		)
 		(property "LCSC Part" "C19702"
-			(at 0 0 -90)
+			(at 0 0 270)
 			(unlocked yes)
 			(layer "F.Fab")
 			(hide yes)
@@ -17560,7 +17495,7 @@
 			)
 		)
 		(property "LCSC Part" "C19666"
-			(at 0 0 -90)
+			(at 0 0 270)
 			(unlocked yes)
 			(layer "F.Fab")
 			(hide yes)
