@@ -59,6 +59,6 @@ not ready that early, so switch the Atari on and then press reset.
 
 ## Which Atari
 
-Tested on a Mega STE and a Falcon. TheHulk works the same on both, but many cartridges were
-made for the ST and its 68000, and some of them do not run on a Falcon. That is the
-cartridge, not TheHulk.
+Tested on a Mega STE and a Falcon. TheHulk works the same on both, but most cartridges were
+written for the ST and its 68000, years before the Falcon came out, and some of them do not
+run on a Falcon. That is the software on the cartridge, not TheHulk.
