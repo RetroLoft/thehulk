@@ -76,4 +76,4 @@ Where there is a real drive, the other letter stays the real drive: with the ima
 
 ## Which Atari
 
-Works on the ST computers (ST, STE, Mega ST(E)). Not tested yet on the TT and the Falcon.
+Works on every 16-bit Atari: ST, STE, Mega ST(E), TT and Falcon.
