@@ -58,6 +58,22 @@ power-on, also when the ESP32 and the Atari are switched on together. TT and Fal
 memory test first. A diagnostic cartridge (checked at the first instruction) needs a
 reset after power-on.
 
+## The Falcon030
+
+The Falcon reads a wrong word from the cartridge now and then. With gateware v20 (one clock
+less from address to data) this went down to about 8 in 4.7 million direct reads, but not to
+zero. GEMDRIVE therefore checks every block:
+- **Read:** on TOS 4 (the Falcon), the ESP32 switches on `SHARED_VARIABLE_READ_CHECK`. GEMDRIVE
+  then compares the sum of the words in each copied block with the sum from the ESP32, and
+  copies the block again from the cartridge when they differ. This covers the drives
+  (`Fread`) and the floppy emulator.
+- **Write:** on every machine, the ESP32 sends back the sum of each 2 KB write block, and
+  GEMDRIVE sends the block again when it differs.
+- **Retries:** a read block is copied again up to 3 times; a write block is sent up to 3
+  times in all. After that GEMDRIVE returns an error rather than wrong data.
+
+With these checks, copies on the Falcon come out complete and correct.
+
 ## Parts
 
 - microSD: push-push socket HRO TF-01A (LCSC C91145), footprint `TF-SMD_TF-01A` (locating
