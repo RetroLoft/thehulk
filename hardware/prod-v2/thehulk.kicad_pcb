@@ -8111,7 +8111,7 @@
 			(uuid "7150c5fa-9c54-48b1-8d96-da0789a8bd50")
 		)
 		(embedded_fonts no)
-		(model "${KICAD9_3DMODEL_DIR}/LED_SMD.3dshapes/LED_WS2812B-2020_PLCC4_2.0x2.0mm.step"
+		(model "${KIPRJMOD}/3dmodels/LED_WS2812B-2020.wrl"
 			(offset
 				(xyz 0 0 0)
 			)
