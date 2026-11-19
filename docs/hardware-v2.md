@@ -80,3 +80,19 @@ With these checks, copies on the Falcon come out complete and correct.
   holes NPTH), symbol `TF-01A.kicad_sym`.
 - Through-hole parts (DevKitC headers, buttons, buzzer, display and reset connectors) and
   the cartridge edge are not in the JLCPCB BOM.
+
+## prod-v3: power for a USB host
+
+`hardware/prod-v3/` is prod-v2 with one addition. With an OTG adapter on the micro-USB port,
+the ESP32-S3 can be a USB host for a keyboard or mouse. The board then has to supply VBUS.
+On prod-v2, D1 only lets VBUS in.
+
+- U13 (TPS2051C) switches +5V_SYS to VBUS. Its current limit is 0.67–1.0 A. When U13 is
+  off it blocks reverse current, so a PC on the port still powers the board through D1.
+- GPIO8 (`USB_PWR_EN`) switches U13 on. R24 keeps it off while the ESP32 starts.
+- GPIO9 (`USB_ID`) is the ID pin of the connector. An OTG adapter grounds it. The firmware
+  must enable the internal pull-up.
+- In host mode the 5 V comes from the Atari, so the USB host works only while the Atari is on.
+
+The firmware does not use this yet. Low-speed devices behind a hub do not work with the
+ESP-IDF USB host, so connect a keyboard, a mouse or a wireless dongle directly.
