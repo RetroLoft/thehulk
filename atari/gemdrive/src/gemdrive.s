@@ -426,6 +426,17 @@ detect_emulated_drive   macro
 ; string in a4.
 ; Output: d0.w = slot index (0..SIDETNFS_MAX_RUNTIME_DRIVES-1) of the matched drive.
 detect_emulated_drive_letter   macro
+                        ; TheHulk: a device name ("CON:", "AUX:", "PRN:", a colon after three
+                        ; characters) is for TOS, also when the current drive is one of ours.
+                        tst.b (a4)
+                        beq.s .\@detect_emulated_not_device
+                        tst.b 1(a4)
+                        beq.s .\@detect_emulated_not_device
+                        tst.b 2(a4)
+                        beq.s .\@detect_emulated_not_device
+                        cmp.b #':', 3(a4)
+                        beq .exec_old_handler
+.\@detect_emulated_not_device:
                         cmp.b #':', 1(a4)                    ; Check if the second character of the file specification string is the colon
                         bne.s .\@detect_emulated_drive_continue; If not, exec_old_handler the code. Otherwise continue with the code
                         move.b (a4), d0                      ; Get the first letter of the file specification string
@@ -440,7 +451,7 @@ detect_emulated_drive_letter   macro
 
 ; Check if the file handler is of the SidecarT or not.
 detect_emulated_file_handler   macro
-                        and.l #$FFFF, d3                     ; Mask the upper word of the file handle
+                        ext.l d3                             ; TheHulk: signed, so device handles (CON: is -1) stay with TOS
                         cmp.l (GEMDRVEMUL_SHARED_VARIABLES + (SHARED_VARIABLE_FIRST_FILE_DESCRIPTOR * 4)), d3 ; Check if the file handle in the range
                         blt .exec_old_handler                ; If less than, exec_old_handler the code. Otherwise continue with the code
                         endm
@@ -1754,7 +1765,7 @@ _notlong:
     move.l 0(a4), d5                     ; get the datetime information (DOSTIME)
     move.l 4(a4), d6                     ; get the datetime information (DOSDATE)
     and.l #$FFFF, d3                     ; Mask the upper word of the flag
-    and.l #$FFFF, d4                     ; Mask the upper word of the handle
+    ext.l d4                             ; The handle, signed: device handles (CON: is -1) stay with TOS
 
 
     cmp.l (GEMDRVEMUL_SHARED_VARIABLES + (SHARED_VARIABLE_FIRST_FILE_DESCRIPTOR * 4)), d4 ; TheHulk: it is about a handle, a4 is no path
