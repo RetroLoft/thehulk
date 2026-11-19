@@ -1,0 +1,9 @@
+# KiCad auto-generated / regenerable
+fp-info-cache
+*.kicad_pcb-bak
+*.kicad_sch-bak
+*.bck
+*~
+*.lck
+*-backups/
+_autosave-*
